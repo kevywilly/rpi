@@ -30,7 +30,7 @@ import time
 from servo import Servo
 from sensor import SensorArray
 from motor import Motor, Drivetrain
-from server import *
+import json
 import pigpio
 
 FORWARD = 1
@@ -47,29 +47,108 @@ motors = Drivetrain(15,14,18,6,5,13)
 # ir sensors
 sensors = SensorArray()
     
-HOST, PORT = "localhost", 9000
-server = ThreadedTCPServer((HOST, PORT), ThreadedTCPRequestHandler)
+HOST, PORT = "0.0.0.0", 9001
 
-def cleanup():
-    motors.brake()
+server = None
+    
+class Command:
+    
+    def __init__(self, json_string):
+        self.json_data = json.loads('{}')
+        try: 
+            self.json_data = json.loads(json_string)
+            self.cmd = self.json_data["cmd"]
+        except:
+            print("Could not read JSON")
+            self.cmd = None
+        
+        
+    def get(self,key):
+        if key in self.json_data:
+            return self.json_data[key]
+        return None
+        
+        
+    def get_or(self,key,default):
+        v = self.get(key)
+        if v == None:
+            return default
+        
+        return v
+        
+class EchoRequestHandler(socketserver.BaseRequestHandler):
+
+    def handle(self):
+        # Echo the back to the client
+        data = self.request.recv(256)
+        dispatch(data)
+        self.request.send(b'ok')
+        return
+       
+def close_server():
+	global server
+	try:
+		server.shutdown(1)
+	except:
+		print("server not connected")
+	finally:
+		server.socket.close()
+
+def signal_handler(signal, frame):
+    
+    print('You pressed Ctrl+C!')
+
+    try:
+        cleanup()
+        close_server()
+    except:
+        pass
+    finally:
+        sys.exit(0)
+
+
+def start_server(port):
+    global server
+    
+    server = socketserver.TCPServer(('0.0.0.0',port), EchoRequestHandler)
+    signal.signal(signal.SIGINT, signal_handler)
+    t = threading.Thread(target=server.serve_forever)
+    t.setDaemon(True) # don't hang on exit
+    t.start()
+    print("started server ... waiting for connections")
+    
+    while 1:
+        pass
+    
+# Dispatch message
+def dispatch(data):
+    
+    s = str(data[0:(data.find(0))],"utf-8")
+    print(s)
+    
+    command = Command(s)
+    cmd = command.cmd
+    
+    print(cmd)
+    if cmd == "drive":
+        motors.brake()
+        motors.drive(int(command.get_or("speed",0)*100), int(command.get_or("turn",0)*100))
+    elif cmd == "look":
+        servo1.setAngle(int(command.get_or("yaw",0)))
+        
+        p = int(command.get_or("pitch",0)) + 90
+        if p > 90:
+            p = 90
+        servo2.setAngle(p)
+        
     
 
-def client(ip, port, message):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((ip, port))
-    try:
-        sock.sendall(message)
-        response = sock.recv(1024)
-        print ("Received: {}".format(response))
-    finally:
-        sock.close()
+def cleanup():
+    try: 
+        motors.brake()
+    except:
+        "stopped motors"
 
-def sig_handler(signum, frame):
-    global server
-    cleanup()
-    print('Signal handler called with signal', signum)
-    server.shutdown
-    sys.exit(0)
     
 def autonomous():
     
@@ -128,38 +207,27 @@ def autonomous():
             print(e)
     
     
-signal.signal(signal.SIGINT, sig_handler)
-signal.signal(signal.SIGTERM, sig_handler)
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 if __name__ == "__main__":
-    # Port 0 means to select an arbitrary unused port
-    #HOST, PORT = "localhost", 0
-
-    #server = ThreadedTCPServer((HOST, PORT), ThreadedTCPRequestHandler)
    
-
-    ip, port = server.server_address
-
-    # Start a thread with the server -- that thread will then start one
-    # more thread for each request
-    server_thread = threading.Thread(target=server.serve_forever)
-    # Exit the server thread when the main thread terminates
-    server_thread.daemon = True
-    server_thread.start()
-    print ("Server loop running in thread:", server_thread.name)
-
-    client(ip, port, b"Hello World 1")
-    client(ip, port, b"Hello World 2")
-    client(ip, port, b"Hello World 3")
+   
+    #start_server(8000)
     
-    while True:
-        print("running")
-        time.sleep(1)
+    # while True:
+    #    time.sleep(10/1000)
 
-    server.shutdown()
-    server.server_close()
     
+    servo1.setAngle(0) # yaw
+    servo2.setAngle(80) # pitch
+    #autonomous()
     
+    start_server(8000)
+    #while True:
+    #    time.sleep(15/1000)
+    
+    close_server()
     cleanup()
     
     #raspistill -o output.jpg

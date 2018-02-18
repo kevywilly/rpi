@@ -5,12 +5,20 @@ import socketserver
 import json
 
 class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
-
+    def __init__(self, callback, *args, **keys):
+        self.callback = callback
+        socketserver.BaseRequestHandler.__init__(self, *args, **keys)
+        
     def handle(self):
-        data = self.request.recv(1024)
-        cur_thread = threading.current_thread()
-        response = "{}: {}".format(cur_thread.name, data)
-        self.request.sendall(response)
+        #rec = self.request.recv(1024)
+        #data = str(rec, 'utf8')
+        #cur_thread = threading.current_thread()
+        #response = bytes("{}: {}".format(cur_thread.name, data), 'utf8')
+        #self.request.sendall(rec)
+        data = self.request.recv(256)
+        self.request.sendall(b'ok')
+        self.callback(data) #
+
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     pass
