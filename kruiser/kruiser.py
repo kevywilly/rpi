@@ -32,11 +32,18 @@ from sensor import SensorArray
 from motor import Motor, Drivetrain
 import json
 import pigpio
+import random
 
 FORWARD = 1
 REVERSE = 2
 RIGHT = 3
-LEFT = 4
+HARDRIGHT = 4
+LEFT = 5
+HARDLEFT = 6
+SPEED = 75
+SPEED2 = 50
+
+rand = -1
 
 # servos
 servo1 = Servo(17, min_pulse_width = 510, max_pulse_width = 2390)
@@ -131,7 +138,7 @@ def dispatch(data):
     
     print(cmd)
     if cmd == "drive":
-        motors.brake()
+        #motors.brake()
         motors.drive(int(command.get_or("speed",0)*100), int(command.get_or("turn",0)*100))
     elif cmd == "look":
         servo1.setAngle(int(command.get_or("yaw",0)))
@@ -149,7 +156,70 @@ def cleanup():
     except:
         "stopped motors"
 
+def autonomous(setmode=FORWARD):
+    global rand
+    sensors.read_adc()
+    score = sensors.score
+    right, left = score
+    mode = setmode
     
+    if mode == RIGHT and left <= 0b001:
+        mode = FORWARD
+    elif mode == HARDRIGHT and left < 0b010:
+        mode = FORWARD
+    elif mode == LEFT and right <= 0b001:
+        mode = FORWARD
+    elif mode == HARDLEFT and right < 0b010:
+        mode = FORWARD
+    elif mode == REVERSE and score == (0,0):
+        mode = FORWARD
+    elif score == (0,0):
+        mode = FORWARD
+    elif score == (0b111,0b111):
+        mode = REVERSE
+    elif right > 0b011 and left > 0b011:
+        mode = REVERSE
+    elif right > 0 and left > 0:
+        if left > right:
+            mode = RIGHT
+        else:
+            mode = LEFT
+    elif right > left:
+        mode = LEFT
+        if right > 0b011:
+            mode = HARDLEFT
+    elif right < left:
+        mode = RIGHT
+        if left > 0b011:
+            mode = HARDRIGHT
+    else:
+        mode = FORWARD
+    
+    if mode is not REVERSE:
+        rand = -1
+        
+    # NOW RUN THE MOTORS
+    if mode == FORWARD:
+        motors.drive(SPEED,0)
+    elif mode == REVERSE:
+        if rand == -1:
+            rand = random.randint(1,2)
+        if rand == 1:
+            motors.drive(-SPEED2, 100, 200)
+        else:
+            motors.drive(-SPEED2, -100, 200)
+    elif mode == RIGHT:
+        motors.drive(SPEED2, 60,25)
+    elif mode == LEFT:
+        motors.drive(SPEED2, -60,25)
+    elif mode == HARDRIGHT:
+        motors.drive(SPEED2, 100,50)
+    elif mode == HARDLEFT:
+        motors.drive(SPEED2, -100,50)
+        
+    return mode
+    
+'''    
 def autonomous():
     
     global run_mode
@@ -206,26 +276,26 @@ def autonomous():
         except Exception as e:
             print(e)
     
-    
+'''
+
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 if __name__ == "__main__":
    
-   
-    #start_server(8000)
-    
-    # while True:
-    #    time.sleep(10/1000)
-
-    
+    random.seed(time.time)
     servo1.setAngle(0) # yaw
     servo2.setAngle(80) # pitch
-    #autonomous()
     
-    start_server(8000)
-    #while True:
-    #    time.sleep(15/1000)
+    ''' run server '''
+    #start_server(8000)
+    
+    ''' or autonomous '''
+    mode = FORWARD
+    while True:
+        print(sensors.score)
+        mode = autonomous(mode)
+        time.sleep(15/1000)
     
     close_server()
     cleanup()
