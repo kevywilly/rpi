@@ -34,6 +34,7 @@ import json
 import pigpio
 import random
 
+runmode = 0
 FORWARD = 1
 REVERSE = 2
 RIGHT = 3
@@ -87,7 +88,8 @@ class EchoRequestHandler(socketserver.BaseRequestHandler):
 
     def handle(self):
         # Echo the back to the client
-        data = self.request.recv(256)
+        data = self.request.recv(256).strip()
+        print(data)
         dispatch(data)
         self.request.send(b'ok')
         return
@@ -116,6 +118,8 @@ def signal_handler(signal, frame):
 
 def start_server(port):
     global server
+    global runmode
+    mode = FORWARD
     
     server = socketserver.TCPServer(('0.0.0.0',port), EchoRequestHandler)
     signal.signal(signal.SIGINT, signal_handler)
@@ -125,12 +129,16 @@ def start_server(port):
     print("started server ... waiting for connections")
     
     while 1:
+        if runmode == 1:
+            mode = autonomous(mode)
+            time.sleep(10/1000)
         pass
     
 # Dispatch message
 def dispatch(data):
-    
-    s = str(data[0:(data.find(0))],"utf-8")
+    global runmode
+    s = str(data,"ascii") #str(data[0:(data.find(0))],"utf-8")
+    print(len(data))
     print(s)
     
     command = Command(s)
@@ -147,8 +155,9 @@ def dispatch(data):
         if p > 90:
             p = 90
         servo2.setAngle(p)
+    elif cmd == "setmode":
+        runmode = command.get_or("mode",0)
         
-    
 
 def cleanup():
     try: 
@@ -288,15 +297,20 @@ if __name__ == "__main__":
     servo2.setAngle(80) # pitch
     
     ''' run server '''
-    #start_server(8000)
+    start_server(8000)
     
-    ''' or autonomous '''
+    ''' or autonomous 
     mode = FORWARD
     while True:
         print(sensors.score)
         mode = autonomous(mode)
         time.sleep(15/1000)
+    '''
     
+    #motors.drive(50,0)
+   
+    #time.sleep(1)    
+    #motors.brake()
     close_server()
     cleanup()
     
