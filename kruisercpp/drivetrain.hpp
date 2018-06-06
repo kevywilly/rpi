@@ -1,8 +1,8 @@
-#ifndef DRIVETRAIN_HPP_
-#define DRIVETRAIN_HPP_
+#ifndef DRIVETRAIN_HPP
+#define DRIVETRAIN_HPP
 
 #include "pigpio.h"
-#include "utils.hpp"
+#include "utils.h"
 #include <iostream>
 #include "math.h"
 
@@ -11,12 +11,12 @@ namespace kruiser {
     
 class Motor {
     public:
-        Motor(int pin1, int pin2, int pwm) {
+        Motor(uint8_t pin1, uint8_t pin2, uint8_t pwm) {
             pin1_ = pin1;
             pin2_ = pin2;
             pwm_ = pwm;
             speed_ = 0;
-            pins_ = new int[3];
+            pins_ = new uint8_t[3];
             pins_[0] = pin1_;
             pins_[1] = pin2_;
             pins_[2] = pwm_;
@@ -26,6 +26,9 @@ class Motor {
             }
         }
         
+        virtual ~Motor() {
+            brake();
+        }
         void brake() {
             for(int i=0; i < 3; i++) {
                 gpioWrite(pins_[i], 0);
@@ -50,15 +53,15 @@ class Motor {
         }
         
     private:
-        int pin1_, pin2_, pwm_, speed_;
-        int * pins_;
+        uint8_t pin1_, pin2_, pwm_, speed_;
+        uint8_t * pins_;
     
 };
 class Drivetrain {
     
     public:
         
-        Drivetrain(int rear1, int rear2,int rearPWM, int front1, int front2, int frontPWM) : motorR_(rear1, rear2, rearPWM), motorF_(front1, front2, frontPWM) {}
+        Drivetrain(uint8_t rear1, uint8_t rear2, uint8_t rearPWM, uint8_t front1, uint8_t front2, uint8_t frontPWM) : motorR_(rear1, rear2, rearPWM), motorF_(front1, front2, frontPWM) {}
         
         void brake() {
             motorR_.brake();

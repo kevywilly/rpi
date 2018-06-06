@@ -1,12 +1,24 @@
-#ifndef UTILS_HPP_
-#define UTILS_HPP_
+#ifndef UTILS_H
+#define UTILS_H
 
 #include <chrono>
 #include <thread>
+#include <iostream>
 
 using namespace std;
 
 namespace kruiser {
+  
+    class Logger {
+       public:
+          static inline void debug(const string& s) {
+          	cout << s;
+          }
+          static inline void debugln(const string &s) {
+          	debug(s);
+          	cout << endl;
+          }
+    }; 
     // # Declarations
     void delay(int millis);
     void map();
@@ -21,6 +33,8 @@ namespace kruiser {
     {
       return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
     }
+    
+    
 
 }
 #endif
