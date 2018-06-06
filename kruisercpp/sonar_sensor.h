@@ -6,8 +6,8 @@
 #include <pigpio.h>
 
 #define MICROSECONDS_PER_CM  (1000000/34321)
-#define MAXDISTANCE 400
-#define MINDISTANCE 5
+#define MAX_SONAR_DISTANCE 400
+#define MIN_SONAR_DISTANCE 5
 
 class SonarSensor {
     private:
@@ -54,7 +54,7 @@ class SonarSensor {
             gpioSetMode(echo_,    PI_INPUT);
             
             // set distance to 0
-            distance = MAXDISTANCE;
+            distance = MAX_SONAR_DISTANCE;
             
             // set ticks to 0
             firstTick_ = startTick_ = 0;
@@ -109,7 +109,7 @@ class SonarSensor {
            
               firstTick_ = firstTick_ = 0;
               
-              distance = (diffTick > MAXDISTANCE || diffTick <= MINDISTANCE) ? MAXDISTANCE : diffTick;   
+              distance = (diffTick > MAX_SONAR_DISTANCE || diffTick <= MIN_SONAR_DISTANCE) ? MAX_SONAR_DISTANCE : diffTick;   
            
               pinged_ = true;
               triggered_ = false;

@@ -48,7 +48,7 @@ using namespace kruiser;
 // ***************************************************
 #define SONAR1_TRIGGER 19
 #define SONAR1_ECHO    26
-
+#define SONARS 6
 SonarSensor * sonar1;
 
 
@@ -106,7 +106,7 @@ class RobotStatus {
 	public:
 	
 	int * Adcs;
-	int * SonarReadings;
+	int * SonarValues;
 	float Pitch;
 	float Yaw;
 	float Speed;
@@ -121,12 +121,15 @@ class RobotStatus {
 		Speed = 0.0;
 		Turn = 0.0;
 		Adcs = new int[ADCS];
+		SonarValues = new int[SONARS];
 		
 		for(int i=0; i < ADCS; i++) {
 			Adcs[i] = ADCMAXDISTANCE;
 		}
 		
-	
+		for(int i=0; i < SONARS; i++) {
+			SonarValues[i] = MAX_SONAR_DISTANCE;
+		}
 	}
 	
 	// Read ADC values
@@ -134,9 +137,14 @@ class RobotStatus {
 		adc_sensor_->readMulti(Adcs, ADCS);
 	}
 	
+	void readSonars() {
+		SonarValues[0] = sonar1->distance;
+	}
+	
 	// Generate status as json string
 	string statusToJsonString() {
 
+		
 		stringstream oss;
 		oss << "{\"adc\":[";
 		for(int i=0; i < ADCS; i ++) {
@@ -145,7 +153,14 @@ class RobotStatus {
 				oss << ",";
 		}
 		oss << "]";
-		oss << "," << "\"sonar\":[" << sonar1->distance <<",0,0,0,0,0]";
+		
+		oss << ",\"sonar\":[";
+		for(int i=0; i < SONARS; i ++) {
+			oss << SonarValues[i];
+			if(i < (SONARS-1))
+				oss << ",";
+		}
+		oss << "]";
 		oss << "," << "\"speed\":" << Speed;
 		oss << "," << "\"turn\":" << Turn;
 		oss << "," << "\"pitch\":" << Pitch;
@@ -161,6 +176,14 @@ class RobotStatus {
 		cout << endl; 
 		for(int i=0; i < ADCS; i++) {
 			cout << i << ":" << Adcs[i] << "  ";
+		}
+		cout << endl; 
+	}
+	
+	void printSonarValues() {
+		cout << endl; 
+		for(int i=0; i < SONARS; i++) {
+			cout << i << ":" << SonarValues[i] << "  ";
 		}
 		cout << endl; 
 	}
@@ -230,6 +253,7 @@ string dispatch(const string& data) {
 		string cmd = j["cmd"];
 		
 		robotstatus.readAdcs();
+		robotstatus.readSonars();
 		
 		if(cmd == "setmode") {
 			int mode = j["mode"];
