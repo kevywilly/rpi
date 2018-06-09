@@ -34,13 +34,19 @@ namespace kruiser {
             }
             
             int ir_to_cm(int value) {
-                return map(value,7,880,30,4);
+                // based on GP2Y0A41SK0F 4-30 cm sensor
+                // https://www.dfrobot.com/wiki/index.php/File:Formulas.jpg
+                int adj_val = value < 80 ? 80 : value;
+                adj_val = adj_val > 530 ? 530 : adj_val;
+                return 2075/(adj_val-11);
+                //return map(value,7,800,100,4);
             }
         
             int readMulti(int * values, int numValues) {
                 for(int i=0; i < numValues; i++) {
                     values[i] = read(i);
                 }
+                printf("\n");
             }
             
             int read(int adc_number) {
@@ -62,6 +68,7 @@ namespace kruiser {
                      
                 }
                 
+                printf("%u:%u, ", adc_number, read_val);
                 return ir_to_cm(read_val);
             }
             

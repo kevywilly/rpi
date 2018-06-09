@@ -79,7 +79,7 @@ TCPServer tcp;
 #define MOSI 10
 #define CLK 11
 #define ADCS 8
-#define ADCMAXDISTANCE 30
+#define ADCMAXDISTANCE 100
 
 
 
