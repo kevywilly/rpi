@@ -13,8 +13,6 @@ class SonarSensor {
     private:
         uint8_t trigger_;
         uint8_t echo_;
-        uint8_t timer_;
-        bool pinged_ = true;
         bool triggered_ = false;
         volatile uint32_t startTick_;
         volatile uint32_t firstTick_;
@@ -24,25 +22,17 @@ class SonarSensor {
         // last distance reading
         volatile uint32_t distance;
         
-        // callback for echo
-        void(*fnEcho) (int,int,uint32_t);
-        
-        // trigger function
-        void(*fnTrigger) (void);
         
         // constructor
-        SonarSensor(uint8_t trigger_pin, uint8_t echo_pin, uint8_t timer, void(*triggerFn) (void), void(*echoFn) (int,int,uint32_t)) {
+        SonarSensor(uint8_t trigger_pin, uint8_t echo_pin) {
             trigger_ = trigger_pin;
             echo_ = echo_pin;
-            timer_ = timer;
-            fnEcho = echoFn;
-            fnTrigger = triggerFn;
             init();
         }
         
         // deconstructor
         virtual ~SonarSensor() {
-            stop();
+            
         }
         
        
@@ -60,24 +50,6 @@ class SonarSensor {
             firstTick_ = startTick_ = 0;
         }
         
-        // start pinging
-        void start() {
-            
-            // update sonar 20 times a second */
-            gpioSetTimerFunc(timer_, 50, fnTrigger); /* every 50ms */
-
-            /* monitor sonar echos */
-            gpioSetAlertFunc(echo_, fnEcho);
-        }
-        
-        // stop pinging
-        void stop() {
-            // stop triggers
-            gpioSetTimerFunc(timer_, 50, NULL); 
-
-            // stop monitoring sonar echos
-            gpioSetAlertFunc(echo_, NULL);
-        }
         
         // trigger a pulse
         void sonarTrigger(void)
@@ -89,7 +61,6 @@ class SonarSensor {
             startTick_, firstTick_ = 0;
             gpioTrigger(trigger_, 10, PI_ON);
             triggered_ = true;
-            pinged_ = false;
            
         }
         
@@ -111,7 +82,6 @@ class SonarSensor {
               
               distance = (diffTick > MAX_SONAR_DISTANCE || diffTick <= MIN_SONAR_DISTANCE) ? MAX_SONAR_DISTANCE : diffTick;   
            
-              pinged_ = true;
               triggered_ = false;
               
            }

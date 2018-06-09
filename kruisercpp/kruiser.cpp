@@ -14,14 +14,14 @@
 *GPIO10 (19) (20) GND   
  *GPIO9 (21) (22) GPIO25
 *GPIO11 (23) (24) GPIO8* 
-   *GND (25) (26) GPIO7* 
-  GPIO0 (27) (28) GPIO1 
+   *GND (25) (26) GPIO7* trigger4
+  GPIO0 (27) (28) GPIO1* echo4
  *GPIO5 (29) (30) GND   
- *GPIO6 (31) (32) GPIO12
+ *GPIO6 (31) (32) GPIO12*
  *GPIO13 (33) (34) GND   
- GPIO19 (35) (36) GPIO16
- GPIO26 (37) (38) GPIO20
-    GND (39) (40) GPIO21
+ *GPIO19 (35) (36) GPIO16*
+ *GPIO26 (37) (38) GPIO20*
+    GND (39) (40) GPIO21*
 
 */
 
@@ -47,9 +47,19 @@ using namespace kruiser;
 // SONAR 
 // ***************************************************
 #define SONAR1_TRIGGER 19
+#define SONAR2_TRIGGER 16
+#define SONAR3_TRIGGER 12
+#define SONAR4_TRIGGER	7
 #define SONAR1_ECHO    26
+#define SONAR2_ECHO	   20
+#define SONAR3_ECHO	   21
+#define SONAR4_ECHO		1
 #define SONARS 6
+
 SonarSensor * sonar1;
+SonarSensor * sonar2;
+SonarSensor * sonar3;
+SonarSensor * sonar4;
 
 
 
@@ -139,6 +149,9 @@ class RobotStatus {
 	
 	void readSonars() {
 		SonarValues[0] = sonar1->distance;
+		SonarValues[1] = sonar2->distance;
+		SonarValues[2] = sonar3->distance;
+		SonarValues[3] = sonar4->distance;
 	}
 	
 	// Generate status as json string
@@ -213,9 +226,20 @@ RobotStatus robotstatus;
 
 SonarSensor *getSonar(int gpio) {
    switch(gpio) {
-         case SONAR1_ECHO:
+        case SONAR1_ECHO:
             return sonar1;
             break;
+        case SONAR2_ECHO:
+            return sonar2;
+            break;
+        case SONAR3_ECHO:
+            return sonar3;
+            break;
+        case SONAR4_ECHO:
+            return sonar4;
+            break;
+        default:
+        	return NULL;
    }
    
    return NULL;
@@ -232,17 +256,36 @@ void sonarCallback(int gpio, int level, uint32_t tick){
 
 void sonarTrigger(){
       sonar1->sonarTrigger();
+      gpioDelay(10);
+      sonar2->sonarTrigger();
+      gpioDelay(10);
+      sonar3->sonarTrigger();
+      gpioDelay(10);
+      sonar4->sonarTrigger();
 }
 
 void startSonars() {
 	Logger::debug("initializing sonar...");
-	sonar1 = new SonarSensor(SONAR1_TRIGGER, SONAR1_ECHO, 0, sonarTrigger, sonarCallback);
-	sonar1->start();
+	sonar1 = new SonarSensor(SONAR1_TRIGGER, SONAR1_ECHO);
+	sonar2 = new SonarSensor(SONAR2_TRIGGER, SONAR2_ECHO);
+	sonar3 = new SonarSensor(SONAR3_TRIGGER, SONAR3_ECHO);
+	sonar4 = new SonarSensor(SONAR4_TRIGGER, SONAR4_ECHO);
+	
+	gpioSetTimerFunc(0, 50, sonarTrigger);
+	gpioSetAlertFunc(SONAR1_ECHO, sonarCallback);
+	gpioSetAlertFunc(SONAR2_ECHO, sonarCallback);
+	gpioSetAlertFunc(SONAR3_ECHO, sonarCallback);
+	gpioSetAlertFunc(SONAR4_ECHO, sonarCallback);
+	
 	Logger::debug("success\n");
 }
 
 void stopSonars() {
-	sonar1->stop();
+	gpioSetTimerFunc(0, 50, NULL);
+	gpioSetAlertFunc(SONAR1_ECHO, NULL);
+	gpioSetAlertFunc(SONAR2_ECHO, NULL);
+	gpioSetAlertFunc(SONAR3_ECHO, NULL);
+	gpioSetAlertFunc(SONAR4_ECHO, NULL);
 }
 
 // Dispatch TCP Message
