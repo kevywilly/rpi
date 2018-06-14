@@ -21,7 +21,7 @@ class SonarSensor {
     
         // last distance reading
         volatile uint32_t distance;
-        
+        volatile uint32_t lastReading;
         
         // constructor
         SonarSensor(uint8_t trigger_pin, uint8_t echo_pin) {
@@ -44,7 +44,7 @@ class SonarSensor {
             gpioSetMode(echo_,    PI_INPUT);
             
             // set distance to 0
-            distance = MAX_SONAR_DISTANCE;
+            distance = lastReading = MAX_SONAR_DISTANCE;
             
             // set ticks to 0
             firstTick_ = startTick_ = 0;
@@ -67,6 +67,7 @@ class SonarSensor {
         void sonarEcho(int gpio, int level, uint32_t tick) {
            
            int diffTick;
+           uint32_t newDistance;
         
            if (!firstTick_) firstTick_ = tick;
         
@@ -80,10 +81,17 @@ class SonarSensor {
            
               firstTick_ = firstTick_ = 0;
               
-              distance = (diffTick > MAX_SONAR_DISTANCE || diffTick <= MIN_SONAR_DISTANCE) ? MAX_SONAR_DISTANCE : diffTick;   
+              newDistance = (diffTick > MAX_SONAR_DISTANCE || diffTick <= MIN_SONAR_DISTANCE) ? MAX_SONAR_DISTANCE : diffTick;   
            
-              triggered_ = false;
+              // debounce reading of 400 (must happen twice in a row)
+              if((newDistance < 400) || (newDistance == lastReading)) {
+                  distance = newDistance;
+              }
               
+              // store this reading as last reading
+              lastReading = newDistance;
+              
+              triggered_ = false;
            }
         }
     
