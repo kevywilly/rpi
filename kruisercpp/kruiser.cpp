@@ -35,6 +35,7 @@
 #include "json.hpp"
 #include "mcp3008.h"
 #include "sonar_sensor.h"
+#include "neurocore/neuronic.h"
 //#include "opencv2/opencv.hpp"
 
 // FOR CONVENIENCE
@@ -64,6 +65,16 @@ SonarSensor * sonar4;
 
 
 // ***************************************************
+// NEURAL NETWORK
+// ***************************************************
+Neuronic neural("/home/pi/neural_network/kruiser/kruiser.yml");
+double TEST_INPUTS[10] = {
+			-0.175,-0.479167,0.0,0.0,0.0,0.0,0.8375,0.8375,0.8049999999999999,0.8049999999999999
+	};
+
+#define NUM_ACTIONS 8
+
+// ***************************************************
 // TCP SERVER 
 // ***************************************************
 
@@ -79,7 +90,7 @@ TCPServer tcp;
 #define MOSI 10
 #define CLK 11
 #define ADCS 8
-#define ADCMAXDISTANCE 100
+#define IR_MAX_DISTANCE 30
 
 
 
@@ -121,6 +132,9 @@ class RobotStatus {
 	float Yaw;
 	float Speed;
 	float Turn;
+	float * IRProximity;
+	float * SonarProximity;
+	double * RecommendedAction;
 	
 	Drivetrain * motors;
 	CameraMount * camera_mount;
@@ -130,21 +144,32 @@ class RobotStatus {
 		Yaw = 0.0;
 		Speed = 0.0;
 		Turn = 0.0;
+		
+		RecommendedAction = new double[NUM_ACTIONS];
+		
 		Adcs = new int[ADCS];
 		SonarValues = new int[SONARS];
 		
+		IRProximity = new float[ADCS];
+		SonarProximity = new float[SONARS];
+		
 		for(int i=0; i < ADCS; i++) {
-			Adcs[i] = ADCMAXDISTANCE;
+			Adcs[i] = IR_MAX_DISTANCE;
+			IRProximity[i] = 0;
 		}
 		
 		for(int i=0; i < SONARS; i++) {
 			SonarValues[i] = MAX_SONAR_DISTANCE;
+			SonarProximity[i] = 0;
 		}
 	}
 	
 	// Read ADC values
 	void readAdcs() {
 		adc_sensor_->readMulti(Adcs, ADCS);
+		for(int i=0; i < ADCS; i++) {
+			IRProximity[i] = 1.0 - (Adcs[i]/(IR_MAX_DISTANCE*1.0));
+		}
 	}
 	
 	void readSonars() {
@@ -152,28 +177,57 @@ class RobotStatus {
 		SonarValues[1] = sonar2->distance;
 		SonarValues[2] = sonar3->distance;
 		SonarValues[3] = sonar4->distance;
+		for(int i=0; i < SONARS; i++) {
+			SonarProximity[i] = 1.0 - (SonarValues[i]/(MAX_SONAR_DISTANCE*1.0));
+		}
 	}
 	
 	// Generate status as json string
 	string statusToJsonString() {
-
+		int i;
 		
 		stringstream oss;
+		
+		// adc values
 		oss << "{\"adc\":[";
-		for(int i=0; i < ADCS; i ++) {
+		for(i=0; i < ADCS; i ++) {
 			oss << Adcs[i];
 			if(i < (ADCS-1))
 				oss << ",";
 		}
 		oss << "]";
 		
+		// sonar values
 		oss << ",\"sonar\":[";
-		for(int i=0; i < SONARS; i ++) {
+		for(i=0; i < SONARS; i ++) {
 			oss << SonarValues[i];
 			if(i < (SONARS-1))
 				oss << ",";
 		}
 		oss << "]";
+		
+		// proximity values
+		oss << ",\"proximity\":[";
+		for(i=0; i < ADCS; i++) {
+			oss << IRProximity[i] << ",";
+		}
+		for(i=0; i < SONARS; i++) {
+			oss << SonarProximity[i];
+			if(i < (SONARS-1))
+				oss << ",";
+		}
+		oss << "]";
+		
+		// recommended action
+		oss << ",\"rec\":[";
+		for(i=0; i < NUM_ACTIONS; i ++) {
+			oss << RecommendedAction[i];
+			if(i < (7))
+				oss << ",";
+		}
+		oss << "]";
+		
+		// speed, pitch, turn, yaw
 		oss << "," << "\"speed\":" << Speed;
 		oss << "," << "\"turn\":" << Turn;
 		oss << "," << "\"pitch\":" << Pitch;
@@ -210,7 +264,42 @@ class RobotStatus {
 		printAdcs();
 	}
 
+	double adcToFeature(double value) { return 1.0 - value/30.0;}
+
+    double sonarToFeature(double value) {return 1.0 - value/400.0;}
+    
+	double * buildFeatures() {
+
+		double * features = new double[10];
+		features[0] = Speed;
+		features[1] = Turn;
+		for(int i=0; i < 4; i++) {
+			features[2+i] = IRProximity[i];
+			features[6+i] = SonarProximity[i];
+		}
+		
+		return features;
+	}
 	
+	double * getRecommendedAction() {
+		double * features = buildFeatures();
+		/*
+		for(int i=0; i < 10; i++) {
+			cout << features[i] << endl;
+		}
+		*/
+		RecommendedAction = neural.network.FeedInputs(features);
+		/*
+		for(int i =0; i < neural.network.NumOutputNeurons; i++) {
+			cout << outputs[i] << endl;
+		}
+		*/
+		
+		
+		return RecommendedAction;
+		
+	}
+
 	private:
 		MCP3008 * adc_sensor_;
 		
@@ -297,6 +386,7 @@ string dispatch(const string& data) {
 		
 		robotstatus.readAdcs();
 		robotstatus.readSonars();
+		robotstatus.getRecommendedAction();
 		
 		if(cmd == "setmode") {
 			int mode = j["mode"];
@@ -387,8 +477,12 @@ int main(int argc, char* argv[])
 	cout << capture << endl;
 	return 0;
 	*/
-	
-	
+	Logger::debug("testing neural network...\n");
+	double * outputs = neural.network.FeedInputs(TEST_INPUTS);
+	for(int i =0; i < neural.network.NumOutputNeurons; i++) {
+		cout << outputs[i] << endl;
+	}
+	Logger::debug("ok\n");
 	
 	Logger::debug("initializing pigpio...");
 	
