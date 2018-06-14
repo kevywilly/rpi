@@ -4,7 +4,7 @@ project (Kruiser)
 #find_package( Boost REQUIRED )
 #find_package( OpenCV REQUIRED )
 
-#set(INCLUDE json network )
+#set(INCLUDE /usr/local/include/neuronic )
 set(SOURCES kruiser.cpp tcpserver.cpp)
 
 
@@ -13,6 +13,6 @@ set(SOURCES kruiser.cpp tcpserver.cpp)
 add_executable(Kruiser ${SOURCES})
 
 #target_link_libraries(Kruiser pthread pigpio ${OpenCV_LIBS})
-target_link_libraries(Kruiser pthread pigpio)
+target_link_libraries(Kruiser pthread pigpio neurocore libyaml.a)
 
 install(TARGETS Kruiser DESTINATION /usr/bin)
