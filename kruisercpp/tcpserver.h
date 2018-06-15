@@ -16,7 +16,7 @@
 
 using namespace std;
 
-#define MAXPACKETSIZE 256
+#define MAXPACKETSIZE 512
 
 class TCPServer
 {

@@ -46,7 +46,6 @@ namespace kruiser {
                 for(int i=0; i < numValues; i++) {
                     values[i] = read(i);
                 }
-                printf("\n");
             }
             
             int read(int adc_number) {
@@ -68,7 +67,6 @@ namespace kruiser {
                      
                 }
                 
-                printf("%u:%u, ", adc_number, read_val);
                 return ir_to_cm(read_val);
             }
             
