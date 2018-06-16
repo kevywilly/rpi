@@ -389,7 +389,15 @@ class Robot {
 		        TrainingValues.pop_front();
 		    
 		    TrainingData td(TrainingValues);
-		    neuralNetwork->network.Train(td, 10, 0.001, trainingCallback);
+		    /*
+		    for(i=0; i < td.numRows; i++) {
+		        for(int j=0; j < td.numColumns; j++) {
+		            cout << td.data[i][j] << ",";
+		        }
+		        cout << endl;
+		    }
+		    */
+		    neuralNetwork->network.Train(td, 0.001, 5, trainingCallback);
 		    
 		}
 		double * getRecommendedAction() {
@@ -444,6 +452,9 @@ class Robot {
 		    drive(rec_speed, rec_turn);
 		    
 		    // Delay
+		    if(rec_speed < 0) {
+		        delay(500);
+		    }
 		    if(rec_turn < (-0.1) || rec_turn > 0.1)
 		        delay(250);
 		    else 

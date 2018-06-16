@@ -171,7 +171,7 @@ void sonarTrigger(){
 }
 
 void trainingCallback(int count, double error) {
-	robot.neuralNetwork->TrainingCallback(count, error);
+	cout << count << ": " << error << endl;
 }
 // Main entry point
 int main(int argc, char* argv[]){
