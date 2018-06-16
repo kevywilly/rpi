@@ -413,7 +413,7 @@ class Robot {
 		        cout << endl;
 		    }*/
 		    
-		    neuralNetwork->network.Train(td, 0.0001, 20, trainingCallback);
+		    neuralNetwork->network.Train(td, 0.0001, 10, trainingCallback);
 		    
 		}
 		double * getRecommendedAction() {
