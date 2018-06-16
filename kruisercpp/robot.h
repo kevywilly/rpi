@@ -4,6 +4,7 @@
 #include "utils.h"
 #include <cstdlib>
 #include <iostream>
+#include <list>
 #include "tcpserver.h"
 #include "json.hpp"
 #include "mcp3008.h"
@@ -29,6 +30,9 @@ using namespace kruiser;
 
 //Neural Network
 #define NUM_TARGETS 4
+#define REVERSE_THRESHOLD 0.1
+#define TURN_THRESHOLD 0.1
+#define RISK_THRESHOLD 0.75
 
 // ADCS
 #define CE0 8
@@ -63,25 +67,34 @@ using namespace kruiser;
 #define M_FRONT2 6
 #define M_FRONT_PWM 13
 
-
+#define IS_REVERSE 0
+#define IS_RIGHT 1
+#define IS_LEFT 2
+#define IS_SEVERE 3
 
 // ***************************************************
 // ROBOTSTATUS
 // ***************************************************
 class Robot { 
-	public:
-		// RobotStatus Members
-		int * Adcs;
+    private:
+        int * Adcs;
 		int * SonarValues;
 		float Pitch;
 		float Yaw;
-		float Speed;
-		float Turn;
+		float Speed, PrevSpeed;
+		float Turn, PrevTurn;
 		float * IRProximity;
 		float * SonarProximity;
 		double * RecommendedAction;
 		void (*sonarCallback)(int, int, uint32_t);
 		void (*sonarTrigger)(void);
+		void(*trainingCallback)(int,double);
+		bool Autonomous;
+		std::list<std::list<double>> TrainingValues;
+		
+	public:
+		// RobotStatus Members
+		
 		
 		// Object pointers
 		Neuronic * neuralNetwork;
@@ -93,20 +106,20 @@ class Robot {
 		SonarSensor * sonar3;
 		SonarSensor * sonar4;
 	
-		double TEST_INPUTS[10] = {
-				-1,-0.479167,0.0,0.0,0.0,0.0,0.8375,0.8375,0.8049999999999999,0.8049999999999999
-		};
-	
 		// RobotStatus Constructor
-		Robot(void(*sonarCallbackFunction)(int, int, uint32_t), void(*sonarTriggerFunction)(void)) {
+		Robot(void(*sonarCallbackFunction)(int, int, uint32_t), void(*sonarTriggerFunction)(void), void(*trainingCallbackFunction)(int,double)) {
 			
 			sonarCallback = sonarCallbackFunction;
 			sonarTrigger = sonarTriggerFunction;
+			trainingCallback = trainingCallbackFunction;
 			
+			Autonomous = false;
 			Pitch = 0.0;
 			Yaw = 0.0;
 			Speed = 0.0;
 			Turn = 0.0;
+			PrevSpeed = 0.0;
+			PrevTurn = 0.0;
 			
 			RecommendedAction = new double[NUM_TARGETS];
 			
@@ -125,6 +138,32 @@ class Robot {
 				SonarValues[i] = MAX_SONAR_DISTANCE;
 				SonarProximity[i] = 0;
 			}
+		}
+		
+		void setAutonomous(bool value) {
+		    Autonomous = value;
+		}
+		
+		double getSpeed() {
+		    return Speed;
+		}
+		
+		double getTurn() {
+		    return Turn;
+		}
+		
+		void setSpeed(double value) {
+		    PrevSpeed = Speed;
+		    Speed = value;
+		}
+		
+		void setTurn(double value) {
+		    PrevTurn = Turn;
+		    Turn = value;
+		}
+		
+		bool getAutonomous(bool value) {
+		    return Autonomous;
 		}
 		
 		void initialize() {
@@ -295,25 +334,122 @@ class Robot {
 		}
 	    
 		double * buildFeatures() {
-			double * features = new double[10];
-			features[0] = Speed;
-			features[1] = Turn;
+			double * features = new double[neuralNetwork->network.NumInputNeurons];
+			features[0] = ((Turn < -0.75) || (Turn > 0.75)) ? 0.9 : 0.1;
 			for(int i=0; i < 4; i++) {
-				features[2+i] = IRProximity[i];
-				features[6+i] = SonarProximity[i];
+				features[1+i] = IRProximity[i];
+				features[5+i] = SonarProximity[i];
 			}
 			return features;
 		}
 		
-		double * buildTargets(double speed, double turn) {
-			double * targets = new double[NUM_TARGETS];
+		double * buildTargets() {
+		    
+		    // holder for targets
+			double * targets = new double[neuralNetwork->network.NumOutputNeurons];
+		
+            targets[IS_REVERSE] = 0.1;
+            targets[IS_RIGHT] = 0.1;
+            targets[IS_LEFT] = 0.1;
+            targets[IS_SEVERE] = 0.1;
+            
+            if(Speed < (-REVERSE_THRESHOLD))
+                targets[IS_REVERSE] = 0.9;
+    
+            if(Turn > TURN_THRESHOLD) {
+                targets[IS_RIGHT] = 0.9;
+            } else if(Turn < (-TURN_THRESHOLD)) {
+                targets[IS_LEFT] = 0.9;
+            }
+    
+            if((Turn > RISK_THRESHOLD) || (Turn < (-RISK_THRESHOLD))) {
+                targets[IS_SEVERE] = 0.9;
+            }
+            
 			return targets;
 		}
 		
+		void train() {
+		    int i;
+		    
+		    std::list<double> row;
+		    
+		    double * inputs = buildFeatures();
+		    double * targets = buildTargets();
+		    
+		    for(i=0; i < neuralNetwork->network.NumInputNeurons; i++)
+		        row.push_back(inputs[i]);
+		    
+		    for(i=0; i < neuralNetwork->network.NumOutputNeurons; i++)
+		        row.push_back(targets[i]);
+		        
+		    TrainingValues.push_back(row);
+		    
+		    if(TrainingValues.size() > 20)
+		        TrainingValues.pop_front();
+		    
+		    TrainingData td(TrainingValues);
+		    neuralNetwork->network.Train(td, 10, 0.001, trainingCallback);
+		    
+		}
 		double * getRecommendedAction() {
 			double * features = buildFeatures();
 			RecommendedAction = neuralNetwork->network.FeedInputs(features);
 			return RecommendedAction;
+		}
+		
+		void drive(double speed, double turn) {
+		    setSpeed(speed);
+		    setTurn(turn);
+		    motors->drive(Speed*100, Turn*100);
+		}
+		
+		void moveCamera(double pitch, double yaw) {
+		    Pitch = pitch;
+		    Yaw = yaw;
+		    double actual_pitch = Pitch+90;
+			if(actual_pitch > 90) {
+				actual_pitch = 90;
+			}
+			cameraMount->move_to(actual_pitch, Yaw);
+		}
+		
+		void runAutonomously() {
+		    if(!Autonomous)
+		        return;
+		    readAdcs();
+		    readSonars();
+		    getRecommendedAction();
+		    
+		    double rec_speed = (RecommendedAction[IS_REVERSE] > 0.5) ? -0.3 : 0.3;
+		    double rec_turn = 0.0;
+		    double rgt = RecommendedAction[IS_RIGHT];
+		    double lft = RecommendedAction[IS_LEFT];
+		    double severe = RecommendedAction[IS_SEVERE];
+		    
+		    if(lft > 0.5 || rgt > 0.5) {
+		        if(lft > rgt) {
+		            rec_turn = -0.5;
+		        } else {
+		            rec_turn = 0.5;
+		        }
+		    }
+		    
+		    rec_turn = severe > 0.5 ? rec_turn * 2.0 : rec_turn;
+		    
+		    
+		    cout << "autonomous speed: " << rec_speed << " turn: " << rec_turn << endl;
+		    
+		    // Drive
+		    drive(rec_speed, rec_turn);
+		    
+		    // Delay
+		    if(rec_turn < (-0.1) || rec_turn > 0.1)
+		        delay(250);
+		    else 
+		        delay(100);
+		    
+		    
 		}
 		
 		

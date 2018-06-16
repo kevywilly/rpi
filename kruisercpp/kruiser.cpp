@@ -45,12 +45,13 @@ void * loop(void * m);
 void cleanup();
 void start_tcp(int port);
 string dispatch(const string& data);
+void trainingCallback(int count, double error);
 
 // TCP Server
 TCPServer tcp;
 
 // Robot
-Robot robot(sonarCallback, sonarTrigger);
+Robot robot(sonarCallback, sonarTrigger, trainingCallback);
 
 // Capture image using opencv
 
@@ -67,21 +68,25 @@ string dispatch(const string& data) {
 		
 		if(cmd == "setmode") {
 			int mode = j["mode"];
+			if(mode == 1)
+				robot.setAutonomous(true);
+			else
+				robot.setAutonomous(false);
+			
+			robot.drive(0.0,0.0);
+				
 		} else if(cmd == "drive") {
-			robot.Speed = j["speed"];
-			robot.Turn = j["turn"];
-			robot.motors->drive(robot.Speed*100,robot.Turn*100);
-		} else if(cmd == "look") {
-			robot.Yaw = j["yaw"];
-			robot.Pitch = j["pitch"];
-			float actual_pitch = robot.Pitch+90;
-			if(actual_pitch > 90) {
-				actual_pitch = 90;
+			robot.drive(j["speed"],j["turn"]);
+			if(robot.getSpeed() != 0) {
+				cout << "start training" << endl;
+				robot.train();
+				cout << "end training" << endl;
 			}
-			robot.cameraMount->move_to(actual_pitch, robot.Yaw);
+		} else if(cmd == "look") {
+			robot.moveCamera(j["pitch"], j["yaw"]);
 		} else if(cmd == "adc") {
 			
-		}
+		} 
 	} catch (nlohmann::detail::parse_error& e) {
 		cout << "Exception in tcp dispatch: " << e.what() << endl;
 		stringstream s;
@@ -128,6 +133,8 @@ void * loop(void * m)
 			//tcp.Send(result+s);
 			tcp.Send(result+"\n");
 			tcp.clean();
+		} else {
+			robot.runAutonomously();
 		}
 		
 		
@@ -163,7 +170,9 @@ void sonarTrigger(){
 	robot.sonar4->sonarTrigger();
 }
 
-
+void trainingCallback(int count, double error) {
+	robot.neuralNetwork->TrainingCallback(count, error);
+}
 // Main entry point
 int main(int argc, char* argv[]){
 	/*
