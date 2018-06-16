@@ -31,6 +31,7 @@
 #include "tcpserver.h"
 #include "json.hpp"
 #include "robot.h"
+#include <ctime>
 //#include "opencv2/opencv.hpp"
 
 // FOR CONVENIENCE
@@ -118,6 +119,10 @@ void start_tcp(int port) {
 void * loop(void * m)
 {
     pthread_detach(pthread_self());
+    //clock_t begin = clock();
+    
+    
+    
 	while(1)
 	{
 		srand(time(NULL));
@@ -133,10 +138,26 @@ void * loop(void * m)
 			//tcp.Send(result+s);
 			tcp.Send(result+"\n");
 			tcp.clean();
+			//begin = clock();
 		} else {
 			robot.runAutonomously();
+			/*
+			if(!robot.getAutonomous()) {
+				if((double(begin - clock()) / CLOCKS_PER_SEC) > 3) {
+					if(true) {
+						robot.readAdcs();
+						robot.readSonars();
+						robot.setPrevSpeed(robot.getSpeed());
+						robot.setPrevTurn(robot.getTurn());
+						robot.train();
+					}
+				}
+			}
+			*/
 		}
 		
+		
+		 
 		
 		usleep(1000);
 	}

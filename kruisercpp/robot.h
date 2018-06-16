@@ -144,12 +144,24 @@ class Robot {
 		    Autonomous = value;
 		}
 		
+		bool getAutonomous() {
+		    return Autonomous;
+		}
+		
 		double getSpeed() {
 		    return Speed;
 		}
 		
 		double getTurn() {
 		    return Turn;
+		}
+		
+		void setPrevSpeed(double value) {
+		    PrevSpeed = value;
+		}
+		
+		void setPrevTurn(double value) {
+		    PrevTurn = value;
 		}
 		
 		void setSpeed(double value) {
@@ -162,9 +174,9 @@ class Robot {
 		    Turn = value;
 		}
 		
-		bool getAutonomous(bool value) {
-		    return Autonomous;
-		}
+		
+		
+		
 		
 		void initialize() {
 			
@@ -300,7 +312,7 @@ class Robot {
 			oss << ",\"rec\":[";
 			for(i=0; i < NUM_TARGETS; i ++) {
 				oss << RecommendedAction[i];
-				if(i < (7))
+				if(i < (3))
 					oss << ",";
 			}
 			oss << "]";
@@ -335,15 +347,18 @@ class Robot {
 	    
 		double * buildFeatures() {
 			double * features = new double[neuralNetwork->network.NumInputNeurons];
+			double * prevTargets = buildTargets(PrevSpeed, PrevTurn);
+			
 			features[0] = ((Turn < -0.75) || (Turn > 0.75)) ? 0.9 : 0.1;
 			for(int i=0; i < 4; i++) {
-				features[1+i] = IRProximity[i];
-				features[5+i] = SonarProximity[i];
+				features[i] = IRProximity[i];
+				features[4+i] = SonarProximity[i];
+				features[8+i] = prevTargets[i];
 			}
 			return features;
 		}
 		
-		double * buildTargets() {
+		double * buildTargets(double sp, double tr) {
 		    
 		    // holder for targets
 			double * targets = new double[neuralNetwork->network.NumOutputNeurons];
@@ -353,16 +368,16 @@ class Robot {
             targets[IS_LEFT] = 0.1;
             targets[IS_SEVERE] = 0.1;
             
-            if(Speed < (-REVERSE_THRESHOLD))
+            if(sp < (-REVERSE_THRESHOLD))
                 targets[IS_REVERSE] = 0.9;
     
-            if(Turn > TURN_THRESHOLD) {
+            if(tr > TURN_THRESHOLD) {
                 targets[IS_RIGHT] = 0.9;
-            } else if(Turn < (-TURN_THRESHOLD)) {
+            } else if(tr < (-TURN_THRESHOLD)) {
                 targets[IS_LEFT] = 0.9;
             }
     
-            if((Turn > RISK_THRESHOLD) || (Turn < (-RISK_THRESHOLD))) {
+            if((tr > RISK_THRESHOLD) || (tr < (-RISK_THRESHOLD))) {
                 targets[IS_SEVERE] = 0.9;
             }
             
@@ -375,7 +390,7 @@ class Robot {
 		    std::list<double> row;
 		    
 		    double * inputs = buildFeatures();
-		    double * targets = buildTargets();
+		    double * targets = buildTargets(Speed, Turn);
 		    
 		    for(i=0; i < neuralNetwork->network.NumInputNeurons; i++)
 		        row.push_back(inputs[i]);
@@ -389,15 +404,16 @@ class Robot {
 		        TrainingValues.pop_front();
 		    
 		    TrainingData td(TrainingValues);
+		    
 		    /*
 		    for(i=0; i < td.numRows; i++) {
 		        for(int j=0; j < td.numColumns; j++) {
 		            cout << td.data[i][j] << ",";
 		        }
 		        cout << endl;
-		    }
-		    */
-		    neuralNetwork->network.Train(td, 0.001, 5, trainingCallback);
+		    }*/
+		    
+		    neuralNetwork->network.Train(td, 0.0001, 20, trainingCallback);
 		    
 		}
 		double * getRecommendedAction() {
@@ -429,13 +445,13 @@ class Robot {
 		    readSonars();
 		    getRecommendedAction();
 		    
-		    double rec_speed = (RecommendedAction[IS_REVERSE] > 0.5) ? -0.3 : 0.3;
+		    double rec_speed = (RecommendedAction[IS_REVERSE] > 0.75) ? -0.3 : 0.3;
 		    double rec_turn = 0.0;
 		    double rgt = RecommendedAction[IS_RIGHT];
 		    double lft = RecommendedAction[IS_LEFT];
 		    double severe = RecommendedAction[IS_SEVERE];
 		    
-		    if(lft > 0.5 || rgt > 0.5) {
+		    if(lft > 0.75 || rgt > 0.75) {
 		        if(lft > rgt) {
 		            rec_turn = -0.5;
 		        } else {
@@ -443,8 +459,7 @@ class Robot {
 		        }
 		    }
 		    
-		    rec_turn = severe > 0.5 ? rec_turn * 2.0 : rec_turn;
-		    
+		    rec_turn = severe > 0.75 ? rec_turn * 2.0 : rec_turn;
 		    
 		    cout << "autonomous speed: " << rec_speed << " turn: " << rec_turn << endl;
 		    
@@ -452,13 +467,7 @@ class Robot {
 		    drive(rec_speed, rec_turn);
 		    
 		    // Delay
-		    if(rec_speed < 0) {
-		        delay(500);
-		    }
-		    if(rec_turn < (-0.1) || rec_turn > 0.1)
-		        delay(250);
-		    else 
-		        delay(100);
+		    delay(100);
 		    
 		    
 		}
