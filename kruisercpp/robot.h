@@ -4,7 +4,7 @@
 #include "utils.h"
 #include <cstdlib>
 #include <iostream>
-#include <list>
+//#include <list>
 #include "tcpserver.h"
 #include "mcp3008.h"
 #include "sonar_sensor.h"
@@ -29,9 +29,11 @@ using namespace kruiser;
 
 //Neural Network
 #define NUM_TARGETS 4
-#define REVERSE_THRESHOLD 0.1
+#define REVERSE_THRESHOLD 0.25
 #define TURN_THRESHOLD 0.1
 #define RISK_THRESHOLD 0.75
+#define TURN_NEURON_TRIGGER 0.5
+#define REVERSE_NEURON_TRIGGER 0.75
 
 // ADCS
 #define CE0 8
@@ -67,9 +69,10 @@ using namespace kruiser;
 #define M_FRONT_PWM 13
 
 #define IS_REVERSE 0
-#define IS_RIGHT 1
-#define IS_LEFT 2
-#define IS_SEVERE 3
+#define IS_STRAIGHT 1
+#define IS_RIGHT 2
+#define IS_LEFT 3
+#define IS_SEVERE 4
 
 
 
@@ -91,7 +94,7 @@ class Robot {
 		void (*sonarTrigger)(void);
 		void(*trainingCallback)(int,double);
 		
-		std::list<std::list<double>> TrainingValues;
+		//std::list<std::list<double>> TrainingValues;
 		
 	public:
 		// RobotStatus Members
@@ -351,6 +354,7 @@ class Robot {
 				features[4+i] = SonarProximity[i];
 				features[8+i] = prevTargets[i];
 			}
+			features[12] = prevTargets[4];
 			return features;
 		}
 		
@@ -360,6 +364,7 @@ class Robot {
 			double * targets = new double[neuralNetwork->network.NumOutputNeurons];
 		
             targets[IS_REVERSE] = 0.1;
+            targets[IS_STRAIGHT] = 0.1;
             targets[IS_RIGHT] = 0.1;
             targets[IS_LEFT] = 0.1;
             targets[IS_SEVERE] = 0.1;
@@ -369,8 +374,10 @@ class Robot {
     
             if(tr > TURN_THRESHOLD) {
                 targets[IS_RIGHT] = 0.9;
+                targets[IS_STRAIGHT] = 0.1;
             } else if(tr < (-TURN_THRESHOLD)) {
                 targets[IS_LEFT] = 0.9;
+                targets[IS_STRAIGHT] = 0.1;
             }
     
             if((tr > RISK_THRESHOLD) || (tr < (-RISK_THRESHOLD))) {
@@ -386,39 +393,41 @@ class Robot {
 		        
 		    int i;
 		    
-		    std::list<double> row;
+		    
 		    
 		
 		    double * inputs = buildFeatures();
 		    double * targets = buildTargets(Speed, Turn);
 		    
+		     /*
+		    std::list<double> row;
 		    for(i=0; i < neuralNetwork->network.NumInputNeurons; i++)
 		        row.push_back(inputs[i]);
 		    
 		    for(i=0; i < neuralNetwork->network.NumOutputNeurons; i++)
 		        row.push_back(targets[i]);
 		        
+		 
 		    TrainingValues.push_back(row);
 		    
-		    if(TrainingValues.size() > 50)
+		    if(TrainingValues.size() > 20)
 		        TrainingValues.pop_front();
 		    
 		    TrainingData td(TrainingValues);
-		    
-		    /*
-		    for(i=0; i < td.numRows; i++) {
-		        for(int j=0; j < td.numColumns; j++) {
-		            cout << td.data[i][j] << ",";
-		        }
-		        cout << endl;
-		    }*/
-		    
-		    neuralNetwork->network.Train(td, 0.0001, 4, trainingCallback);
+		  */
+
+		    double err = neuralNetwork->network.TrainOne(inputs, targets, 0.0001, 5000);
+		    cout << "training error = " << err << endl;
 		    
 		}
 		double * getRecommendedAction() {
 			double * features = buildFeatures();
 			RecommendedAction = neuralNetwork->network.FeedInputs(features);
+			cout << "Rec: ";
+			for(int i=0; i < neuralNetwork->network.NumOutputNeurons; i++) {
+			    cout << RecommendedAction[i] << ",";
+			}
+			cout << endl;
 			return RecommendedAction;
 		}
 		
@@ -441,25 +450,27 @@ class Robot {
 		void runAutonomously() {
 		    if(!IsAutonomous)
 		        return;
+		        
 		    readAdcs();
 		    readSonars();
 		    getRecommendedAction();
 		    
-		    double rec_speed = (RecommendedAction[IS_REVERSE] > 0.75) ? -0.3 : 0.3;
+		    double rec_speed = (RecommendedAction[IS_REVERSE] > REVERSE_NEURON_TRIGGER) ? -0.3 : 0.3;
 		    double rec_turn = 0.0;
 		    double rgt = RecommendedAction[IS_RIGHT];
 		    double lft = RecommendedAction[IS_LEFT];
-		    double severe = RecommendedAction[IS_SEVERE];
+		    double straight = RecommendedAction[IS_STRAIGHT];
+		    bool severe = (RecommendedAction[IS_SEVERE] > 0.6);
 		    
-		    if(lft > 0.75 || rgt > 0.75) {
+		    if(straight < lft && straight < rgt) {
 		        if(lft > rgt) {
-		            rec_turn = -0.5;
+		            rec_turn = (severe) ? -1.0 : -0.6;;
 		        } else {
-		            rec_turn = 0.5;
+		            rec_turn = (severe) ? 1.0 : 0.6;
 		        }
 		    }
 		    
-		    rec_turn = severe > 0.75 ? rec_turn * 2.0 : rec_turn;
+		    rec_speed = (!severe) ? rec_speed * 1.5 : rec_speed;
 		    
 		    cout << "auto: " << rec_speed << "," << rec_turn << endl;
 		    
