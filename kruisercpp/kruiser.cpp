@@ -29,13 +29,22 @@
 #include <cstdlib>
 #include <iostream>
 #include "tcpserver.h"
-#include "json.hpp"
 #include "robot.h"
 #include <ctime>
 //#include "opencv2/opencv.hpp"
 
+#define FULL_DATA 0
+
+// Command
+
+#define CMD_AUTO 0
+#define CMD_TRAIN 1
+#define CMD_DRIVE 2
+#define CMD_CAMERA 3
+#define CMD_STATUS 4
+
 // FOR CONVENIENCE
-using json = nlohmann::json;
+//using json = nlohmann::json;
 using namespace std;
 using namespace kruiser;
 
@@ -48,59 +57,67 @@ void start_tcp(int port);
 string dispatch(const string& data);
 void trainingCallback(int count, double error);
 
+bool isAuto = false;
+bool isTraining = false;
+
 // TCP Server
 TCPServer tcp;
 
 // Robot
 Robot robot(sonarCallback, sonarTrigger, trainingCallback);
 
-// Capture image using opencv
 
 // Dispatch TCP Message
-string dispatch(const string& data) {
+void dispatch(const char * data) {
 	
-	try {
-		auto j = json::parse(data);
-		string cmd = j["cmd"];
-		
-		robot.readAdcs();
-		robot.readSonars();
-		robot.getRecommendedAction();
-		
-		if(cmd == "setmode") {
-			int mode = j["mode"];
-			if(mode == 1)
-				robot.setAutonomous(true);
-			else
-				robot.setAutonomous(false);
-			
-			robot.drive(0.0,0.0);
-				
-		} else if(cmd == "drive") {
-			robot.drive(j["speed"],j["turn"]);
-			if(robot.getSpeed() != 0) {
-				cout << "start training" << endl;
-				robot.train();
-				cout << "end training" << endl;
-			}
-		} else if(cmd == "look") {
-			robot.moveCamera(j["pitch"], j["yaw"]);
-		} else if(cmd == "adc") {
-			
-		} 
-	} catch (nlohmann::detail::parse_error& e) {
-		cout << "Exception in tcp dispatch: " << e.what() << endl;
-		stringstream s;
-		s << "{\"error\": ";
-		s << e.what();
-		s << "}";
-		return s.str();
-	}
-	string js = robot.statusToJsonString();
-	cout << js << endl;
-	return js;
-}
+	double dirDrive, gotSpeed, dirTurn, gotTurn;
+	double dirPitch, gotPitch, dirYaw, gotYaw;
 
+	int cmd = static_cast<unsigned>(data[0]);
+	
+	switch(cmd) {
+		case CMD_AUTO: //auto
+			robot.IsAutonomous = (static_cast<unsigned>(data[1]) == 1 ? true : false);
+			robot.drive(0,0);
+			break;
+		case CMD_TRAIN:
+			robot.IsTraining = (static_cast<unsigned>(data[1]) == 1 ? true : false);
+			break;
+		case CMD_DRIVE:
+			robot.IsAutonomous = false;
+			
+			dirDrive = static_cast<unsigned>(data[1]) == 0 ? 1.0 : -1.0;
+			gotSpeed = dirDrive * (static_cast<unsigned>(data[2])*1.0)/100.0;
+			dirTurn = static_cast<unsigned>(data[3]) == 0 ? 1.0 : -1.0;
+			gotTurn = dirTurn * (static_cast<unsigned>(data[4])*1.0)/100.0;
+			
+			robot.drive(gotSpeed,gotTurn);
+			
+			robot.train();
+			
+			break;
+		case CMD_CAMERA:
+			dirPitch = static_cast<unsigned>(data[1]) == 0 ? 1.0 : -1.0;
+			gotPitch = dirPitch * (static_cast<unsigned>(data[2])*1.0);
+			dirYaw = static_cast<unsigned>(data[3]) == 0 ? 1.0 : -1.0;
+			gotYaw = dirYaw * (static_cast<unsigned>(data[4])*1.0);
+			
+			robot.moveCamera(gotPitch,gotYaw);
+			if(isTraining && (gotSpeed > 0 || gotSpeed < 0)) {
+				robot.train();
+			}
+			break;
+		case CMD_STATUS:
+		
+			break;
+			
+		//char resp[] = {data[0],data[1],data[2],data[3],data[4],data[5],data[6],data[7],data[8],data[9]};
+		//return data;
+	}
+		
+			
+}
+	
 void start_tcp(int port) {
 	pthread_t msg;
 	
@@ -126,17 +143,23 @@ void * loop(void * m)
 	while(1)
 	{
 		srand(time(NULL));
-		char ch = 'a' + rand() % 26;
-		string s(1,ch);
-		string str = tcp.getMessage();
+		//char ch = 'a' + rand() % 26;
+		//string s(1,ch);
+		char * str = tcp.getMessage();
 		
 		// Process message if any
-		if( str != "" )
+		if( str != NULL )
 		{
-			cout << "Message:" << str << endl;
-			string result = dispatch(str);
+			cout << "Message:";
+			for(int i=0; i < MAXPACKETSIZE; i++) {
+				cout << static_cast<unsigned>(str[i]) << ",";
+			}
+			cout << endl;
+			
+			dispatch(str);
 			//tcp.Send(result+s);
-			tcp.Send(result+"\n");
+			//tcp.Send(result+"\n");
+			tcp.Send(str);
 			tcp.clean();
 			//begin = clock();
 		} else {

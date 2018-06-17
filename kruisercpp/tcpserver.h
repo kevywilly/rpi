@@ -16,7 +16,7 @@
 
 using namespace std;
 
-#define MAXPACKETSIZE 512
+#define MAXPACKETSIZE 10
 
 class TCPServer
 {
@@ -26,12 +26,12 @@ class TCPServer
 	struct sockaddr_in clientAddress;
 	pthread_t serverThread;
 	char msg[ MAXPACKETSIZE ];
-	static string Message;
+	static char * Message;
 
 	void setup(int port);
-	string receive();
-	string getMessage();
-	void Send(string msg);
+	char * receive();
+	char * getMessage();
+	void Send(char * msg);
 	void detach();
 	void clean();
 

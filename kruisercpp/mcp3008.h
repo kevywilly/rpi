@@ -52,7 +52,7 @@ namespace kruiser {
                 int count, read_val;
                 unsigned char inBuf[3];
                 
-                int cmd = 0b11 << 6;
+                uint8_t cmd = 0b11 << 6;
                 cmd |= (adc_number & 0x07) << 3;
                 
                 unsigned char outBuf[3] = {cmd,0x0,0x0};

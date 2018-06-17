@@ -6,14 +6,13 @@
 #include <iostream>
 #include <list>
 #include "tcpserver.h"
-#include "json.hpp"
 #include "mcp3008.h"
 #include "sonar_sensor.h"
 #include "neurocore/neuronic.h"
 //#include "opencv2/opencv.hpp"
 
 // FOR CONVENIENCE
-using json = nlohmann::json;
+//using json = nlohmann::json;
 using namespace std;
 using namespace kruiser;
 
@@ -72,6 +71,8 @@ using namespace kruiser;
 #define IS_LEFT 2
 #define IS_SEVERE 3
 
+
+
 // ***************************************************
 // ROBOTSTATUS
 // ***************************************************
@@ -89,12 +90,13 @@ class Robot {
 		void (*sonarCallback)(int, int, uint32_t);
 		void (*sonarTrigger)(void);
 		void(*trainingCallback)(int,double);
-		bool Autonomous;
+		
 		std::list<std::list<double>> TrainingValues;
 		
 	public:
 		// RobotStatus Members
-		
+		bool IsAutonomous;
+		bool IsTraining;
 		
 		// Object pointers
 		Neuronic * neuralNetwork;
@@ -113,7 +115,8 @@ class Robot {
 			sonarTrigger = sonarTriggerFunction;
 			trainingCallback = trainingCallbackFunction;
 			
-			Autonomous = false;
+			IsAutonomous = false;
+			IsTraining = false;
 			Pitch = 0.0;
 			Yaw = 0.0;
 			Speed = 0.0;
@@ -138,14 +141,6 @@ class Robot {
 				SonarValues[i] = MAX_SONAR_DISTANCE;
 				SonarProximity[i] = 0;
 			}
-		}
-		
-		void setAutonomous(bool value) {
-		    Autonomous = value;
-		}
-		
-		bool getAutonomous() {
-		    return Autonomous;
 		}
 		
 		double getSpeed() {
@@ -173,10 +168,6 @@ class Robot {
 		    PrevTurn = Turn;
 		    Turn = value;
 		}
-		
-		
-		
-		
 		
 		void initialize() {
 			
@@ -296,6 +287,7 @@ class Robot {
 			}
 			oss << "]";
 			
+			/*
 			// proximity values
 			oss << ",\"proximity\":[";
 			for(i=0; i < ADCS; i++) {
@@ -316,6 +308,7 @@ class Robot {
 					oss << ",";
 			}
 			oss << "]";
+			*/
 			
 			// speed, pitch, turn, yaw
 			oss << "," << "\"speed\":" << Speed;
@@ -348,6 +341,9 @@ class Robot {
 		double * buildFeatures() {
 			double * features = new double[neuralNetwork->network.NumInputNeurons];
 			double * prevTargets = buildTargets(PrevSpeed, PrevTurn);
+			
+			readAdcs();
+		    readSonars();
 			
 			features[0] = ((Turn < -0.75) || (Turn > 0.75)) ? 0.9 : 0.1;
 			for(int i=0; i < 4; i++) {
@@ -385,10 +381,14 @@ class Robot {
 		}
 		
 		void train() {
+		    if(!IsTraining)
+		        return;
+		        
 		    int i;
 		    
 		    std::list<double> row;
 		    
+		
 		    double * inputs = buildFeatures();
 		    double * targets = buildTargets(Speed, Turn);
 		    
@@ -400,7 +400,7 @@ class Robot {
 		        
 		    TrainingValues.push_back(row);
 		    
-		    if(TrainingValues.size() > 20)
+		    if(TrainingValues.size() > 50)
 		        TrainingValues.pop_front();
 		    
 		    TrainingData td(TrainingValues);
@@ -413,7 +413,7 @@ class Robot {
 		        cout << endl;
 		    }*/
 		    
-		    neuralNetwork->network.Train(td, 0.0001, 10, trainingCallback);
+		    neuralNetwork->network.Train(td, 0.0001, 4, trainingCallback);
 		    
 		}
 		double * getRecommendedAction() {
@@ -439,7 +439,7 @@ class Robot {
 		}
 		
 		void runAutonomously() {
-		    if(!Autonomous)
+		    if(!IsAutonomous)
 		        return;
 		    readAdcs();
 		    readSonars();
@@ -461,7 +461,7 @@ class Robot {
 		    
 		    rec_turn = severe > 0.75 ? rec_turn * 2.0 : rec_turn;
 		    
-		    cout << "autonomous speed: " << rec_speed << " turn: " << rec_turn << endl;
+		    cout << "auto: " << rec_speed << "," << rec_turn << endl;
 		    
 		    // Drive
 		    drive(rec_speed, rec_turn);
