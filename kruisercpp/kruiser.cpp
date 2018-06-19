@@ -127,7 +127,10 @@ void start_tcp(int port) {
 	// start receive thread
 	if( pthread_create(&msg, NULL, loop, (void *)0) == 0)
 	{
+		
 		tcp.receive();
+
+		
 	}
 	
 }
@@ -136,8 +139,8 @@ void start_tcp(int port) {
 void * loop(void * m)
 {
     pthread_detach(pthread_self());
-    //clock_t begin = clock();
-    
+    clock_t begin = clock();
+    double elapsed_time;
     
     
 	while(1)
@@ -161,11 +164,24 @@ void * loop(void * m)
 			//tcp.Send(result+"\n");
 			tcp.Send(str);
 			tcp.clean();
-			//begin = clock();
+			begin = clock();
 		} else {
 			robot.runAutonomously();
+			
+			if(!robot.IsAutonomous) {
+				elapsed_time = (double)(clock()-begin) / CLOCKS_PER_SEC;
+				if((elapsed_time >= 2) && (robot.getSpeed() > 0.0 || robot.getSpeed() < 0.0)) {
+						robot.setPrevSpeed(robot.getSpeed());
+						robot.setPrevTurn(robot.getTurn());
+						robot.readAdcs();
+						robot.readSonars();
+						robot.train();
+						elapsed_time = 0;
+				}
+			}
+			
 			/*
-			if(!robot.getAutonomous()) {
+			if(!robot.IsAutonomous) {
 				if((double(begin - clock()) / CLOCKS_PER_SEC) > 3) {
 					if(true) {
 						robot.readAdcs();
@@ -224,7 +240,7 @@ int main(int argc, char* argv[]){
 	cout << capture << endl;
 	return 0;
 	*/
-	
+	srand(time);
 	Logger::debug("initializing pigpio...");
 	if (gpioInitialise() < 0) {
 		   Logger::debug("failed\n");
