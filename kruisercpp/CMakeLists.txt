@@ -5,6 +5,7 @@ project (Kruiser)
 #find_package( OpenCV REQUIRED )
 
 #set(INCLUDE /usr/local/include/neuronic )
+set(CMAKE_BUILD_TYPE Release)
 set(SOURCES kruiser.cpp tcpserver.cpp)
 
 

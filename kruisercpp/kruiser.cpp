@@ -34,6 +34,7 @@
 //#include "opencv2/opencv.hpp"
 
 #define FULL_DATA 0
+#define TRAIN_INTERVAL 0.1
 
 // Command
 
@@ -82,6 +83,8 @@ void dispatch(const char * data) {
 			break;
 		case CMD_TRAIN:
 			robot.IsTraining = (static_cast<unsigned>(data[1]) == 1 ? true : false);
+			if(!robot.IsTraining)
+				robot.saveNetwork();
 			break;
 		case CMD_DRIVE:
 			robot.IsAutonomous = false;
@@ -93,7 +96,7 @@ void dispatch(const char * data) {
 			
 			robot.drive(gotSpeed,gotTurn);
 			
-			robot.train();
+			//robot.train();
 			
 			break;
 		case CMD_CAMERA:
@@ -103,9 +106,7 @@ void dispatch(const char * data) {
 			gotYaw = dirYaw * (static_cast<unsigned>(data[4])*1.0);
 			
 			robot.moveCamera(gotPitch,gotYaw);
-			if(isTraining && (gotSpeed > 0 || gotSpeed < 0)) {
-				robot.train();
-			}
+			
 			break;
 		case CMD_STATUS:
 		
@@ -142,7 +143,7 @@ void * loop(void * m)
     clock_t begin = clock();
     double elapsed_time;
     
-    
+    begin = clock();
 	while(1)
 	{
 		srand(time(NULL));
@@ -164,38 +165,25 @@ void * loop(void * m)
 			//tcp.Send(result+"\n");
 			tcp.Send(str);
 			tcp.clean();
-			begin = clock();
+			
 		} else {
 			robot.runAutonomously();
 			
-			if(!robot.IsAutonomous) {
-				elapsed_time = (double)(clock()-begin) / CLOCKS_PER_SEC;
-				if((elapsed_time >= 2) && (robot.getSpeed() > 0.0 || robot.getSpeed() < 0.0)) {
-						robot.setPrevSpeed(robot.getSpeed());
-						robot.setPrevTurn(robot.getTurn());
-						robot.readAdcs();
-						robot.readSonars();
-						robot.train();
-						elapsed_time = 0;
-				}
-			}
-			
-			/*
-			if(!robot.IsAutonomous) {
-				if((double(begin - clock()) / CLOCKS_PER_SEC) > 3) {
-					if(true) {
-						robot.readAdcs();
-						robot.readSonars();
-						robot.setPrevSpeed(robot.getSpeed());
-						robot.setPrevTurn(robot.getTurn());
-						robot.train();
-					}
-				}
-			}
-			*/
 		}
 		
-		
+		if(!robot.IsAutonomous) {
+			elapsed_time = (double)(clock()-begin) / CLOCKS_PER_SEC;
+			
+			if((elapsed_time >= TRAIN_INTERVAL) && (robot.getSpeed() > 0.0 || robot.getSpeed() < 0.0)) {
+					robot.setPrevSpeed(robot.getSpeed());
+					robot.setPrevTurn(robot.getTurn());
+					robot.readAdcs();
+					robot.readSonars();
+					robot.train();
+					elapsed_time = 0;
+					begin = clock();
+			}
+		}
 		 
 		
 		usleep(1000);
@@ -240,7 +228,8 @@ int main(int argc, char* argv[]){
 	cout << capture << endl;
 	return 0;
 	*/
-	srand(time);
+	srand(time(NULL));
+	
 	Logger::debug("initializing pigpio...");
 	if (gpioInitialise() < 0) {
 		   Logger::debug("failed\n");

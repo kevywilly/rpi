@@ -17,6 +17,16 @@ using namespace std;
 using namespace kruiser;
 
 
+
+#define SFL SonarValues[0]
+#define SFR SonarValues[1]
+#define SL  SonarValues[2]
+#define SR  SonarValues[3]
+#define IFL Adcs[0]
+#define IFR Adcs[1]
+#define IRL Adcs[2]
+#define IRR Adcs[3]
+
 //Sonar
 #define SONAR1_TRIGGER 19
 #define SONAR2_TRIGGER 16
@@ -68,16 +78,18 @@ using namespace kruiser;
 #define M_FRONT2 6
 #define M_FRONT_PWM 13
 
-#define IS_REVERSE 0
-#define IS_FORWARD 1
-#define IS_STRAIGHT 2
-#define IS_RIGHT 3
-#define IS_LEFT 4
-#define IS_SEVERE 5
+#define FORWARD 0
+#define FORWARD_RIGHT 1
+#define FORWARD_LEFT 2
+#define REVERSE_RIGHT 3
+#define REVERSE_LEFT 4
+#define REVERSE 5
 
 const string CONFIG_FILE = "/home/pi/neural_network/kruiser/kruiser.yml";
 const string TRAINING_FILE = "/home/pi/neural_network/kruiser/live_training.csv";
 
+
+	
 // ***************************************************
 // ROBOTSTATUS
 // ***************************************************
@@ -95,6 +107,15 @@ class Robot {
 		void (*sonarCallback)(int, int, uint32_t);
 		void (*sonarTrigger)(void);
 		void(*trainingCallback)(int,double);
+		
+		double drive_parameters[6][3] = {
+			{ 0.4, 0.0, 0.0}, // FORWARD
+			{ 0.4, 0.5, 1.0}, // FORWARD RIGHT
+			{ 0.4,-0.5,-1.0}, // FORWARD LEFT
+			{-0.4, 0.5, 1.0}, // REVERSE RIGHT
+			{-0.4,-0.5,-1.0}, // REVERSE LEFT
+			{-0.4, 0.0, 0.0} // REVERSE
+		};
 		
 		int NumInputs = 0;
 		int NumOutputs = 0;
@@ -121,6 +142,9 @@ class Robot {
 		
 	
 	    virtual ~Robot() {
+	    	if(IsTraining) {
+	    		saveNetwork();
+	    	}
 	        if(trainingOfs.is_open()) {
 	            trainingOfs.flush();
 	            trainingOfs.close();
@@ -163,6 +187,9 @@ class Robot {
 			
 		}
 		
+		void saveNetwork() {
+			neuralNetwork->SaveNetwork();
+		}
 		double getSpeed() {
 		    return Speed;
 		}
@@ -256,7 +283,7 @@ class Robot {
 		    int i;
 			adcSensor->readMulti(Adcs, ADCS);
 			for(i=0; i < ADCS; i++) {
-				IRProximity[i] = 1.0 - (Adcs[i]/(IR_MAX_DISTANCE*1.0));
+				IRProximity[i] = ((double)Adcs[i])/IR_MAX_DISTANCE;
 			}
 		}
 		
@@ -287,7 +314,7 @@ class Robot {
 			SonarValues[2] = sonar3->distance;
 			SonarValues[3] = sonar4->distance;
 			for(i=0; i < SONARS; i++) {
-				SonarProximity[i] = 1.0 - (((double)SonarValues[i])/400.0);
+				SonarProximity[i] = ((double)SonarValues[i])/MAX_SONAR_DISTANCE;
 			}
 		}
 		
@@ -346,49 +373,34 @@ class Robot {
 			cout << endl; 
 		}
 	    
-		double * buildFeatures() {
-			double * features = new double[NumInputs];
-			double * prevTargets = buildTargets(PrevSpeed, PrevTurn);
-			int i;
-			
-			readAdcs();
-		    readSonars();
-			
-			features[0] = ((Turn < -0.75) || (Turn > 0.75)) ? 0.9 : 0.1;
-			for(i=0; i < 4; i++) {
-				features[i] = IRProximity[i];
-				features[4+i] = SonarProximity[i];
-				features[8+i] = prevTargets[i];
-			}
-			features[12] = prevTargets[4];
-			
-			return features;
-		}
+		
 		
 		double * buildTargets(double sp, double tr) {
 		    
+		    int i;
+		    
 		    // holder for targets
 			double * targets = new double[NumOutputs];
-		
-            targets[IS_FORWARD] = 0.1;
-            targets[IS_REVERSE] = 0.1;
-            targets[IS_STRAIGHT] = 0.1;
-            targets[IS_RIGHT] = 0.1;
-            targets[IS_LEFT] = 0.1;
-            //targets[IS_SEVERE] = 0.1;
+			
+			for(i=0; i<NumOutputs; i++)
+				targets[i] = 0.1;
             
-            if(sp < (-REVERSE_THRESHOLD))
-                targets[IS_REVERSE] = 0.9;
-            else
-                targets[IS_FORWARD] = 0.9;
-    
-            if(tr > TURN_THRESHOLD) {
-                targets[IS_RIGHT] = 0.9;
-            } else if(tr < (-TURN_THRESHOLD)) {
-                targets[IS_LEFT] = 0.9;
+            if(sp < 0) { // Reversing
+            	if(tr == 0)
+            		targets[REVERSE] = 0.9;
+            	else if(tr < 0)
+            		targets[REVERSE_LEFT] = 0.9;
+            	else
+            		targets[REVERSE_RIGHT] = 0.9;
             } else {
-                targets[IS_STRAIGHT] = 0.9;
+            	if(tr == 0)
+            		targets[FORWARD] = 0.9;
+            	else if(tr < 0)
+            		targets[FORWARD_LEFT] = 0.9;
+            	else
+            		targets[FORWARD_RIGHT] = 0.9;
             }
+            
     
             /*
             if((tr > RISK_THRESHOLD) || (tr < (-RISK_THRESHOLD))) {
@@ -398,9 +410,72 @@ class Robot {
 			return targets;
 		}
 		
+		double * buildFeatures() {
+			double * features = new double[NumInputs];
+			double * prevTargets = buildTargets(PrevSpeed, PrevTurn);
+			int i;
+			
+			readAdcs();
+		    readSonars();
+			
+			features[0] = 1.0 - ((double)Adcs[0]) / 30.0;
+			features[1] = 1.0 - ((double)Adcs[1]) / 30.0;
+			features[2] = 1.0 - ((double)Adcs[2]) / 30.0;
+			features[3] = 1.0 - ((double)Adcs[3]) / 30.0;
+			
+			features[4] = 1.0 - (SonarValues[0] > 100 ? 100.0 : SonarValues[0]) / 100.0;
+			features[5] = 1.0 - (SonarValues[1] > 100 ? 100.0 : SonarValues[1]) / 100.0;
+			features[6] = 1.0 - (SonarValues[2] > 100 ? 100.0 : SonarValues[2]) / 100.0;
+			features[7] = 1.0 - (SonarValues[3] > 100 ? 100.0 : SonarValues[3]) / 100.0;
+			
+			/*
+			for(i=0; i < 4; i++) {
+				features[i] = IRProximity[i];
+				features[4+i] = SonarProximity[i];
+				features[8+i] = prevTargets[i];
+			}
+			features[12] = prevTargets[4];
+			features[13] = prevTargets[5];
+			*/
+			
+			return features;
+		}
+		
+		/*
+		
+		double * buildFeatures() {
+			double * features = new double[NumInputs];
+			double * prevTargets = buildTargets(PrevSpeed, PrevTurn);
+			int i;
+			
+			readAdcs();
+		    readSonars();
+			
+			features[0] = ((double)Adcs[0]) / 30.0
+			features[1] = ((double)Adcs[2]) / 30.0
+			features[2] = ((double)Adcs[2]) / 30.0
+			features[3] = ((double)Adcs[2]) / 30.0
+			features[4] = ((double)Adcs[2]) / 30.0
+			features[5] = ((double)Adcs[2]) / 30.0
+			features[6] = ((double)Adcs[2]) / 30.0
+			features[1] = ((double)Adcs[2]) / 30.0
+			features[1] = ((double)Adcs[2]) / 30.0
+			features[1] = ((double)Adcs[2]) / 30.0
+			for(i=0; i < 4; i++) {
+				features[i] = IRProximity[i];
+				features[4+i] = SonarProximity[i];
+				features[8+i] = prevTargets[i];
+			}
+			features[12] = prevTargets[4];
+			features[13] = prevTargets[5];
+			
+			return features;
+		}
+		*/
 		void train() {
-		    if(IsAutonomous)
+		    if(IsAutonomous || (Speed == 0.0))
 		        return;
+		    
 		    
 		        
 		    int i;
@@ -409,25 +484,9 @@ class Robot {
 		    double * inputs = buildFeatures();
 		    double * targets = buildTargets(Speed, Turn);
 		    
-		     /*
-		    std::list<double> row;
-		    for(i=0; i < neuralNetwork->network.NumInputNeurons; i++)
-		        row.push_back(inputs[i]);
-		    
-		    for(i=0; i < neuralNetwork->network.NumOutputNeurons; i++)
-		        row.push_back(targets[i]);
-		        
-		 
-		    TrainingValues.push_back(row);
-		    
-		    if(TrainingValues.size() > 20)
-		        TrainingValues.pop_front();
-		    
-		    TrainingData td(TrainingValues);
-		  */
             
             if(IsTraining) {
-		        double err = neuralNetwork->network.TrainOne(inputs, targets, 0.0001, 2000);
+		        double err = neuralNetwork->network.TrainOne(inputs, targets, 0.00001, 10);
 		        cout << "training error = " << err << endl;
             }
 		    
@@ -439,11 +498,7 @@ class Robot {
 		    int i;
 			double * features = buildFeatures();
 			RecommendedAction = neuralNetwork->network.FeedInputs(features);
-			cout << "Rec: ";
-			for(i=0; i < neuralNetwork->network.NumOutputNeurons; i++) {
-			    cout << RecommendedAction[i] << ",";
-			}
-			cout << endl;
+			
 			return RecommendedAction;
 		}
 		
@@ -475,35 +530,39 @@ class Robot {
 		void runAutonomously() {
 		    if(!IsAutonomous)
 		        return;
-		        
+		    
 		    readAdcs();
 		    readSonars();
 		    getRecommendedAction();
 		    
-		    double rec_speed = (RecommendedAction[IS_REVERSE] > RecommendedAction[IS_FORWARD]) ? -0.3 : 0.3;
-		    double rec_turn = 0.0;
-		    double rgt = RecommendedAction[IS_RIGHT];
-		    double lft = RecommendedAction[IS_LEFT];
-		    double straight = RecommendedAction[IS_STRAIGHT];
-		    bool severe = getSeverity();
+		    int i;
+		    double recSpeed = 0.0;
+		    double recTurn = 0.0;
 		    
-		    if(straight < lft && straight < rgt) {
-		        if(lft > rgt) {
-		            rec_turn = (severe) ? -1.0 : -0.6;;
-		        } else {
-		            rec_turn = (severe) ? 1.0 : 0.6;
-		        }
-		    }
+			int recommendedIndex = 0;
+			
+			double maxScore = 0.0;
+			double score;
+			
+			cout << "Rec: ";
+			for(i=0; i < NumOutputs; i++) {
+				score = RecommendedAction[i];
+			    cout << score << ",";
+			    if(score > maxScore) {
+			    	recommendedIndex = i;
+			    	maxScore = score;
+			    }
+			}
+			cout << endl;
 		    
-		    rec_speed = (!severe) ? rec_speed * 1.5 : rec_speed;
+		   
+		    recSpeed = drive_parameters[recommendedIndex][0];
+		    recTurn = getSeverity() > 0.5 ? drive_parameters[recommendedIndex][2] : drive_parameters[recommendedIndex][1];
 		    
-		    cout << "auto: " << rec_speed << "," << rec_turn << endl;
-		    
-		    // Drive
-		    drive(rec_speed, rec_turn);
+		    drive(recSpeed, recTurn);
 		    
 		    // Delay
-		    delay(50);
+		    delay(100);
 		    
 		    
 		}
@@ -527,6 +586,5 @@ class Robot {
 		    
 		    trainingOfs << endl;
 		}
-		
 		
 };
