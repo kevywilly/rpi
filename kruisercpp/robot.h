@@ -17,16 +17,6 @@ using namespace std;
 using namespace kruiser;
 
 
-
-#define SFL SonarValues[0]
-#define SFR SonarValues[1]
-#define SL  SonarValues[2]
-#define SR  SonarValues[3]
-#define IFL Adcs[0]
-#define IFR Adcs[1]
-#define IRL Adcs[2]
-#define IRR Adcs[3]
-
 //Sonar
 #define SONAR1_TRIGGER 19
 #define SONAR2_TRIGGER 16
@@ -108,14 +98,16 @@ class Robot {
 		void (*sonarTrigger)(void);
 		void(*trainingCallback)(int,double);
 		
-		double drive_parameters[6][3] = {
-			{ 0.4, 0.0, 0.0}, // FORWARD
+		double drive_parameters[6][4] = {
+			{ 0.5, 0.0, 0.0}, // FORWARD
 			{ 0.4, 0.5, 1.0}, // FORWARD RIGHT
 			{ 0.4,-0.5,-1.0}, // FORWARD LEFT
 			{-0.4, 0.5, 1.0}, // REVERSE RIGHT
 			{-0.4,-0.5,-1.0}, // REVERSE LEFT
 			{-0.4, 0.0, 0.0} // REVERSE
 		};
+		
+		
 		
 		int NumInputs = 0;
 		int NumOutputs = 0;
@@ -374,6 +366,10 @@ class Robot {
 		}
 	    
 		
+		// Build target outputs based on speed and turn
+		
+	
+		
 		
 		double * buildTargets(double sp, double tr) {
 		    
@@ -401,14 +397,10 @@ class Robot {
             		targets[FORWARD_RIGHT] = 0.9;
             }
             
-    
-            /*
-            if((tr > RISK_THRESHOLD) || (tr < (-RISK_THRESHOLD))) {
-                targets[IS_SEVERE] = 0.9;
-            }*/
             
 			return targets;
 		}
+		
 		
 		double * buildFeatures() {
 			double * features = new double[NumInputs];
@@ -428,50 +420,10 @@ class Robot {
 			features[6] = 1.0 - (SonarValues[2] > 100 ? 100.0 : SonarValues[2]) / 100.0;
 			features[7] = 1.0 - (SonarValues[3] > 100 ? 100.0 : SonarValues[3]) / 100.0;
 			
-			/*
-			for(i=0; i < 4; i++) {
-				features[i] = IRProximity[i];
-				features[4+i] = SonarProximity[i];
-				features[8+i] = prevTargets[i];
-			}
-			features[12] = prevTargets[4];
-			features[13] = prevTargets[5];
-			*/
-			
 			return features;
 		}
 		
-		/*
-		
-		double * buildFeatures() {
-			double * features = new double[NumInputs];
-			double * prevTargets = buildTargets(PrevSpeed, PrevTurn);
-			int i;
-			
-			readAdcs();
-		    readSonars();
-			
-			features[0] = ((double)Adcs[0]) / 30.0
-			features[1] = ((double)Adcs[2]) / 30.0
-			features[2] = ((double)Adcs[2]) / 30.0
-			features[3] = ((double)Adcs[2]) / 30.0
-			features[4] = ((double)Adcs[2]) / 30.0
-			features[5] = ((double)Adcs[2]) / 30.0
-			features[6] = ((double)Adcs[2]) / 30.0
-			features[1] = ((double)Adcs[2]) / 30.0
-			features[1] = ((double)Adcs[2]) / 30.0
-			features[1] = ((double)Adcs[2]) / 30.0
-			for(i=0; i < 4; i++) {
-				features[i] = IRProximity[i];
-				features[4+i] = SonarProximity[i];
-				features[8+i] = prevTargets[i];
-			}
-			features[12] = prevTargets[4];
-			features[13] = prevTargets[5];
-			
-			return features;
-		}
-		*/
+	
 		void train() {
 		    if(IsAutonomous || (Speed == 0.0))
 		        return;
@@ -506,6 +458,7 @@ class Robot {
 		    setSpeed(speed);
 		    setTurn(turn);
 		    motors->drive(Speed*100, Turn*100);
+		    cout << "drive(" << speed << "," << turn << ")" << endl;
 		}
 		
 		void moveCamera(double pitch, double yaw) {
@@ -527,23 +480,33 @@ class Robot {
 		    }
 		    return false;
 		}
+		
+		
+		// Drives autonomously based on feedback from neural net
 		void runAutonomously() {
 		    if(!IsAutonomous)
 		        return;
 		    
-		    readAdcs();
-		    readSonars();
-		    getRecommendedAction();
+		    // Declarations
 		    
 		    int i;
+		    int recommendedIndex = 0;
+		    
 		    double recSpeed = 0.0;
 		    double recTurn = 0.0;
-		    
-			int recommendedIndex = 0;
-			
 			double maxScore = 0.0;
 			double score;
 			
+		    // Read Sonar and IR Values
+		    readAdcs();
+		    readSonars();
+		    
+		    // Get recommended action from neural network
+		    // This is an array of outputs stored in variable RecommendedAction[]
+		    getRecommendedAction();
+		    
+		   
+			// Loop through recommended actions and find the highest ranking action
 			cout << "Rec: ";
 			for(i=0; i < NumOutputs; i++) {
 				score = RecommendedAction[i];
@@ -556,17 +519,22 @@ class Robot {
 			cout << endl;
 		    
 		   
+		    // Lookup drive parameters table to find the speed and turn associated with recommended actions 
+		    
+		    // Speed
 		    recSpeed = drive_parameters[recommendedIndex][0];
+		    
+		    // If severity is high (one ore more sensors read object way too close, use the high severity value of turn pct)
 		    recTurn = getSeverity() > 0.5 ? drive_parameters[recommendedIndex][2] : drive_parameters[recommendedIndex][1];
 		    
+		    // Tell motors to drive and turn
 		    drive(recSpeed, recTurn);
 		    
 		    // Delay
 		    delay(100);
 		    
-		    
 		}
-		
+	
 		void writeTrainingData(double * features, double * targets) {
 		    int i;
 		    if(!trainingOfs.is_open())
