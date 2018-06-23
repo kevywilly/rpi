@@ -1,89 +1,41 @@
+//============================================================================
+// Name        : robot.h
+// Author      : Kevin Williams
+// Version     :
+// Copyright   : Your copyright notice
+// Description : robot.h
+//============================================================================
+
+#include <ctime>
 #include "pigpio.h"
 #include "camera_mount.hpp"
 #include "drivetrain.hpp"
 #include "utils.h"
 #include <cstdlib>
 #include <iostream>
-//#include <list>
 #include "tcpserver.h"
 #include "mcp3008.h"
 #include "sonar_sensor.h"
 #include "neurocore/neuronic.h"
+#include "robot_constants.h"
+#include "navigation.h"
 //#include "opencv2/opencv.hpp"
 
 // FOR CONVENIENCE
-//using json = nlohmann::json;
+
 using namespace std;
 using namespace kruiser;
 
-
-//Sonar
-#define SONAR1_TRIGGER 19
-#define SONAR2_TRIGGER 16
-#define SONAR3_TRIGGER 12
-#define SONAR4_TRIGGER	7
-#define SONAR1_ECHO    26
-#define SONAR2_ECHO	   20
-#define SONAR3_ECHO	   21
-#define SONAR4_ECHO		1
-#define SONARS 4
-
-//Neural Network
-#define REVERSE_THRESHOLD 0.25
-#define TURN_THRESHOLD 0.1
-#define RISK_THRESHOLD 0.75
-#define TURN_NEURON_TRIGGER 0.5
-#define REVERSE_NEURON_TRIGGER 0.75
-
-// ADCS
-#define CE0 8
-#define CE1 7
-#define MISO 9
-#define MOSI 10
-#define CLK 11
-
-#define ADCS 4
-
-// IR
-#define IR_MAX_DISTANCE 30
-
-// CAMERA MOUNT
-#define SERVO_MIN_PULSE 600
-#define SERVO_MAX_PULSE 2300
-#define CAMERA_PITCH_PIN 27
-#define CAMERA_YAW_PIN 17
-#define CAMERA_DEFAULT_PITCH 90
-#define CAMERA_DEFAULT_YAW 0
-/*
-  enable dev/video0
-  sudo modprobe bcm2835-v4l2 
-*/
-
-// MOTORS
-#define M_REAR1 14
-#define M_REAR2 15
-#define M_REAR_PWM 18
-
-#define M_FRONT1 5
-#define M_FRONT2 6
-#define M_FRONT_PWM 13
-
-#define FORWARD 0
-#define FORWARD_RIGHT 1
-#define FORWARD_LEFT 2
-#define REVERSE_RIGHT 3
-#define REVERSE_LEFT 4
-#define REVERSE 5
-
-const string CONFIG_FILE = "/home/pi/neural_network/kruiser/kruiser.yml";
-const string TRAINING_FILE = "/home/pi/neural_network/kruiser/live_training.csv";
-
-
 	
-// ***************************************************
+//============================================================================
 // ROBOTSTATUS
-// ***************************************************
+//============================================================================
+
 class Robot { 
+	
+//============================================================================
+// Private Declarations
+//============================================================================
     private:
         int * Adcs;
 		int * SonarValues;
@@ -115,13 +67,14 @@ class Robot {
 		std::ofstream trainingOfs;
 		
 		//std::list<std::list<double>> TrainingValues;
-		
+
+//============================================================================
+// Public Declarations
+//============================================================================	
 	public:
-		// RobotStatus Members
+		
 		bool IsAutonomous;
 		bool IsTraining;
-		
-		// Object pointers
 		Neuronic * neuralNetwork;
 		Drivetrain * motors;
 		CameraMount * cameraMount;
@@ -130,9 +83,11 @@ class Robot {
 		SonarSensor * sonar2;
 		SonarSensor * sonar3;
 		SonarSensor * sonar4;
+		Navigation navigation;
 		
-		
-	
+//============================================================================
+// Deconstructor
+//============================================================================
 	    virtual ~Robot() {
 	    	if(IsTraining) {
 	    		saveNetwork();
@@ -142,7 +97,10 @@ class Robot {
 	            trainingOfs.close();
 	        }
 	    }
-		// RobotStatus Constructor
+	    
+//============================================================================
+// Constructor
+//============================================================================
 		Robot(void(*sonarCallbackFunction)(int, int, uint32_t), void(*sonarTriggerFunction)(void), void(*trainingCallbackFunction)(int,double)) {
 
 			
@@ -178,10 +136,11 @@ class Robot {
 			}
 			
 		}
-		
-		void saveNetwork() {
-			neuralNetwork->SaveNetwork();
-		}
+
+
+//============================================================================
+// Getters & Setters
+//============================================================================
 		double getSpeed() {
 		    return Speed;
 		}
@@ -208,7 +167,11 @@ class Robot {
 		    Turn = value;
 		}
 		
-		
+
+//============================================================================
+// Initialization Methods
+//============================================================================
+				
 		void initialize() {
 			
 			Logger::debug("initializing neural network...\n");
@@ -240,13 +203,39 @@ class Robot {
 			Logger::debug("reading sonars...\n");
 			readSonars();
 			
+			Logger::debug("refreshing navigation distances...\n");
+			navUpdateDistances();
+			
 			Logger::debug("getting recommended action...\n");
 			getRecommendedAction();
 			
-			Logger::debug("generating status json...\n");
-			cout << statusToJsonString() << endl;
 		}
 		
+//============================================================================
+// Actuator Methods
+//============================================================================
+
+		void drive(double speed, double turn) {
+		    setSpeed(speed);
+		    setTurn(turn);
+		    motors->drive(Speed*100, Turn*100);
+		    cout << "drive(" << speed << "," << turn << ")" << endl;
+		}
+		
+		void moveCamera(double pitch, double yaw) {
+		    Pitch = pitch;
+		    Yaw = yaw;
+		    double actual_pitch = Pitch+90;
+			if(actual_pitch > 90) {
+				actual_pitch = 90;
+			}
+			cameraMount->move_to(actual_pitch, Yaw);
+		}
+		
+//============================================================================
+// Sensor Methods
+//============================================================================
+
 		void startSonars() {
 			
 			sonar1 = new SonarSensor(SONAR1_TRIGGER, SONAR1_ECHO);
@@ -276,7 +265,9 @@ class Robot {
 			adcSensor->readMulti(Adcs, ADCS);
 			for(i=0; i < ADCS; i++) {
 				IRProximity[i] = ((double)Adcs[i])/IR_MAX_DISTANCE;
+				cout << "IR-" << i << ":" << Adcs[i] << ",";
 			}
+			cout << endl;
 		}
 		
 		SonarSensor *getSonar(int gpio) {
@@ -307,70 +298,21 @@ class Robot {
 			SonarValues[3] = sonar4->distance;
 			for(i=0; i < SONARS; i++) {
 				SonarProximity[i] = ((double)SonarValues[i])/MAX_SONAR_DISTANCE;
+				cout << "Sonar-" << i << ":" << SonarValues[i] << ",";
 			}
-		}
-		
-		// Generate status as json string
-		string statusToJsonString() {
-			int i;
-			
-			stringstream oss;
-			
-			// adc values
-			oss << "{\"adc\":[";
-			for(i=0; i < ADCS; i ++) {
-				oss << Adcs[i];
-				if(i < (ADCS-1))
-					oss << ",";
-			}
-			oss << "]";
-			
-			// sonar values
-			oss << ",\"sonar\":[";
-			for(i=0; i < SONARS; i ++) {
-				oss << SonarValues[i];
-				if(i < (SONARS-1))
-					oss << ",";
-			}
-			oss << "]";
-	
-			
-			// speed, pitch, turn, yaw
-			oss << "," << "\"speed\":" << Speed;
-			oss << "," << "\"turn\":" << Turn;
-			oss << "," << "\"pitch\":" << Pitch;
-			oss << "," << "\"yaw\":" << Yaw;
-			oss << "}";
-			
-			return oss.str();
-		}
-		
-		
-		// Print ADC Values
-		void printAdcs() {
-		    int i;
-			cout << endl; 
-			for(i=0; i < ADCS; i++) {
-				cout << i << ":" << Adcs[i] << "  ";
-			}
-			cout << endl; 
-		}
-		
-		void printSonarValues() {
-		    int i;
-			cout << endl; 
-			for(i=0; i < SONARS; i++) {
-				cout << i << ":" << SonarValues[i] << "  ";
-			}
-			cout << endl; 
+			cout << endl;
 		}
 	    
+//============================================================================
+// Neural Network Methods
+//============================================================================
+
+		// Save Neural Network
+		void saveNetwork() {
+			neuralNetwork->SaveNetwork();
+		}
 		
-		// Build target outputs based on speed and turn
-		
-	
-		
-		
+		// Build targets for Neural Network
 		double * buildTargets(double sp, double tr) {
 		    
 		    int i;
@@ -401,7 +343,7 @@ class Robot {
 			return targets;
 		}
 		
-		
+		// Build Features for Neural Network
 		double * buildFeatures() {
 			double * features = new double[NumInputs];
 			double * prevTargets = buildTargets(PrevSpeed, PrevTurn);
@@ -423,7 +365,7 @@ class Robot {
 			return features;
 		}
 		
-	
+		// Train Neural Network
 		void train() {
 		    if(IsAutonomous || (Speed == 0.0))
 		        return;
@@ -446,6 +388,7 @@ class Robot {
 		    
 		    
 		}
+		
 		double * getRecommendedAction() {
 		    int i;
 			double * features = buildFeatures();
@@ -454,22 +397,7 @@ class Robot {
 			return RecommendedAction;
 		}
 		
-		void drive(double speed, double turn) {
-		    setSpeed(speed);
-		    setTurn(turn);
-		    motors->drive(Speed*100, Turn*100);
-		    cout << "drive(" << speed << "," << turn << ")" << endl;
-		}
-		
-		void moveCamera(double pitch, double yaw) {
-		    Pitch = pitch;
-		    Yaw = yaw;
-		    double actual_pitch = Pitch+90;
-			if(actual_pitch > 90) {
-				actual_pitch = 90;
-			}
-			cameraMount->move_to(actual_pitch, Yaw);
-		}
+
 		
 		bool getSeverity() {
 		    int i;
@@ -555,4 +483,131 @@ class Robot {
 		    trainingOfs << endl;
 		}
 		
+//============================================================================
+// Rules Based Navigation Methods
+//============================================================================
+
+		clock_t clock_begin = clock();
+		
+		inline void startClock() {clock_begin = clock();}
+		
+		inline double elapsedSeconds() {return (double)(clock() - clock_begin) / CLOCKS_PER_SEC;}
+		
+		void navUpdateDistances() {
+			cout << "updating distances" << endl;
+			readAdcs();
+			readSonars();
+			
+			navigation.FrontLeft = SonarValues[0];
+			navigation.FrontRight = SonarValues[1];
+			navigation.Left = SonarValues[2];
+			navigation.Right = SonarValues[3];
+			
+			navigation.FrontLeft2 = Adcs[0];
+			navigation.FrontRight2 = Adcs[1];
+			navigation.RearLeft = Adcs[2];
+			navigation.RearRight = Adcs[3];
+			
+			cout << navigation.FrontLeft << ",";
+			cout << navigation.FrontRight << ",";
+			cout << navigation.FrontLeft2 << ",";
+			cout << navigation.FrontRight2 << ",";
+			cout << navigation.Left << ",";
+			cout << navigation.Right << ",";
+			cout << navigation.RearLeft << ",";
+			cout << navigation.RearRight << endl << endl;;
+			
+		}
+		
+		void navForward() {
+			while(elapsedSeconds() < 0.2 && navigation.FrontIsClear()) {
+				drive(0.4, 0.0);
+				navUpdateDistances();
+			}
+		}
+		
+		// Shift slightly to the left
+		void navShiftLeft() {
+			startClock();
+			//while(elapsedSeconds() < 1.0 && navigation.FrontIsClear() && navigation.LeftIsGt() && navigation.LeftIsClear()) {
+				drive(0.4, -0.2);
+				//delay(100);
+				//navUpdateDistances();
+			//}
+		}
+		
+		// Shift slightly to the right
+		void navShiftRight() {
+			startClock();
+			//while(elapsedSeconds() < 1.0 && navigation.FrontIsClear() && navigation.RightIsGt() && navigation.RightIsClear()) {
+			drive(0.4, 0.2);
+			//delay(100);
+				//navUpdateDistances();
+		
+			//}
+		}
+		
+		// Avoid obstacle on the left (turn right)
+		void navAvoidLeft() {
+			startClock();
+			while(elapsedSeconds() < 0.5 && !(navigation.FrontLeftIsClear())) {
+				drive(0.4, 1);
+				navUpdateDistances();
+		
+			}
+		}
+		
+		// Avoid obstacle on the right (turn left)
+		void navAvoidRight() {
+			startClock();
+			while(elapsedSeconds() < 0.25 && !(navigation.FrontRightIsClear())) {
+				drive(0.4, -1);
+				navUpdateDistances();
+			}
+		}
+		
+		void navReverseLeft() {
+			startClock();
+			while(elapsedSeconds() < 0.25 && navigation.RearRightIsClear())
+			{
+				drive(-0.4, 1.0);
+				navUpdateDistances();
+			}
+		}
+		
+		void navReverseRight() {
+			startClock();
+			//while(elapsedSeconds() < 1.0 && navigation.RearLeftIsClear())
+			//{
+				drive(-0.4, -1.0);
+				navUpdateDistances();
+			//}
+		}
+		
+		void navExecute() {
+			if(!IsAutonomous)
+		        return;
+		    navUpdateDistances();
+		    
+			if(navigation.FrontIsClear()) { 
+				//front is clear adjust to center of lane or drive forward
+				if(navigation.LeftIsGt()) {
+					navShiftLeft();
+				} else if(navigation.RightIsGt()) {
+					navShiftRight();
+				} else {
+					navForward();
+				}
+			} else if(navigation.FrontRightIsClear() && (navigation.FrontRightIsGt() || navigation.RightIsGt())) { // right looks better
+				navAvoidLeft();
+			} else if(navigation.FrontLeftIsClear()) {
+				navAvoidRight();
+			} else if(navigation.FrontLeftIsGt()) { // reverse, left is more clear
+				navReverseLeft();
+			} else  { // reverse, right is more clear
+				navReverseRight();
+			}
+			
+			delay(50);
+		}
 };

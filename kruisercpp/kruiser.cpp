@@ -168,7 +168,7 @@ void * loop(void * m)
 			
 		} else {
 			robot.runAutonomously();
-			
+			//robot.navExecute();
 		}
 		
 		if(!robot.IsAutonomous) {

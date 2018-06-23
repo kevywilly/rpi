@@ -84,9 +84,9 @@ class SonarSensor {
               newDistance = (diffTick > MAX_SONAR_DISTANCE || diffTick <= MIN_SONAR_DISTANCE) ? MAX_SONAR_DISTANCE : diffTick;   
            
               // debounce reading of 400 (must happen twice in a row)
-              if((newDistance < 400) || (newDistance == lastReading)) {
+              //if((newDistance < 400) || (newDistance == lastReading)) {
                   distance = newDistance;
-              }
+              //}
               
               // store this reading as last reading
               lastReading = newDistance;
